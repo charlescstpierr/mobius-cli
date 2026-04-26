@@ -17,6 +17,11 @@ def write_line(message: str) -> None:
     Console(file=sys.stdout, no_color=_no_color()).print(message)
 
 
+def write_json(message: str) -> None:
+    """Write one compact JSON payload to stdout."""
+    sys.stdout.write(f"{message}\n")
+
+
 def write_error_line(message: str) -> None:
     """Write one diagnostic line to stderr."""
     Console(file=sys.stderr, no_color=_no_color()).print(message)

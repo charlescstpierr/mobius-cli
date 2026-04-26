@@ -9,7 +9,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
-from typing import Annotated, Protocol, cast
+from typing import Annotated, Any, Protocol, cast
 
 import typer
 
@@ -55,7 +55,6 @@ COMMAND_MODULES: dict[str, str] = {
     "evolve": "mobius.cli.commands.evolve",
     "lineage": "mobius.cli.commands.lineage",
     "setup": "mobius.cli.commands.setup",
-    "config": "mobius.cli.commands.config",
 }
 
 
@@ -125,6 +124,81 @@ for command_name, module_name in COMMAND_MODULES.items():
     app.command(name=command_name, help="Stub command; implementation pending.")(
         _make_lazy_command(module_name)
     )
+
+
+config_app = typer.Typer(
+    add_completion=False,
+    context_settings={"help_option_names": ["-h", "--help"]},
+    invoke_without_command=True,
+    no_args_is_help=False,
+    help="Show, get, and set Mobius configuration.",
+)
+
+
+def _load_config_command_module() -> object:
+    return importlib.import_module("mobius.cli.commands.config")
+
+
+@config_app.callback()
+def config_callback(ctx: typer.Context) -> None:
+    """Show config when no config subcommand is provided."""
+    if ctx.invoked_subcommand is None:
+        module = _load_config_command_module()
+        cast(Any, module).show(ctx.obj)
+
+
+@config_app.command(name="show")
+def config_show(
+    ctx: typer.Context,
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Emit machine-readable JSON.",
+        ),
+    ] = False,
+) -> None:
+    """Show resolved paths and all config values."""
+    module = _load_config_command_module()
+    cast(Any, module).show(ctx.obj, json_output=json_output)
+
+
+@config_app.command(name="get")
+def config_get(
+    ctx: typer.Context,
+    key: Annotated[str, typer.Argument(help="Config key to read.")],
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Emit machine-readable JSON.",
+        ),
+    ] = False,
+) -> None:
+    """Read one config value."""
+    module = _load_config_command_module()
+    cast(Any, module).get(ctx.obj, key, json_output=json_output)
+
+
+@config_app.command(name="set")
+def config_set(
+    ctx: typer.Context,
+    key: Annotated[str, typer.Argument(help="Config key to persist.")],
+    value: Annotated[str, typer.Argument(help="Config value to persist.")],
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Emit machine-readable JSON.",
+        ),
+    ] = False,
+) -> None:
+    """Set one config value idempotently."""
+    module = _load_config_command_module()
+    cast(Any, module).set_value(ctx.obj, key, value, json_output=json_output)
+
+
+app.add_typer(config_app, name="config")
 
 
 def main() -> None:
