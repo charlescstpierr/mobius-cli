@@ -15,6 +15,7 @@ import typer
 
 from mobius import __version__
 from mobius.cli import output
+from mobius.logging import configure_logging
 
 
 class ExitCode(IntEnum):
@@ -108,6 +109,7 @@ def cli(
 ) -> None:
     """Configure global CLI behavior."""
     signal.signal(signal.SIGINT, _handle_sigint)
+    configure_logging(json_output=json_output)
     ctx.obj = build_context(json_output=json_output)
 
 
