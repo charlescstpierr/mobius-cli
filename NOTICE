@@ -1,0 +1,5 @@
+Mobius is an independent, from-scratch Python CLI implementation inspired by
+the architectural goals and philosophical lineage of Q00/ouroboros.
+
+Q00/ouroboros remains the upstream reference and source of conceptual credit.
+No MCP server or MCP SDK dependency is included in Mobius.

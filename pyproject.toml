@@ -1,0 +1,45 @@
+[project]
+name = "mobius"
+version = "0.1.0"
+description = "Fast, MCP-free Python CLI rewrite inspired by Q00/ouroboros."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [
+  { name = "Mobius contributors" },
+]
+dependencies = [
+  "pydantic>=2.12.0",
+  "rich>=14.0.0",
+  "typer>=0.20.0",
+]
+
+[project.scripts]
+mobius = "mobius.cli:main"
+
+[dependency-groups]
+dev = [
+  "mypy>=1.19.0",
+  "pytest>=9.0.0",
+  "ruff>=0.14.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.10.0,<0.11.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-root = "src"
+module-name = "mobius"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["mobius"]

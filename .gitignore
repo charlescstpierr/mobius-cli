@@ -1,0 +1,22 @@
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments and local tooling
+.venv/
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+
+# Build outputs
+build/
+dist/
+*.egg-info/
+
+# Local environment
+.env
+.env.*
+
+# Operating system files
+.DS_Store
