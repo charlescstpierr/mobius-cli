@@ -1,0 +1,107 @@
+name: perf-guard
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    paths:
+      - "src/**"
+      - "pyproject.toml"
+      - ".github/workflows/perf-guard.yml"
+      - "bench/ci_perf_guard.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: perf-guard-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cold-start:
+    name: cold-start regression guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      # Budgets in milliseconds. CI runner is ~1.5x slower than the
+      # darwin-arm64 dev box; see docs/benchmarks.md for rationale.
+      HELP_BUDGET_MS: "90"
+      STATUS_BUDGET_MS: "130"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Cache build venv
+        id: venv-cache
+        uses: actions/cache@v4
+        with:
+          path: .venv-perf
+          key: perf-venv-${{ runner.os }}-py312-${{ hashFiles('pyproject.toml', 'uv.lock') }}
+
+      - name: Install hyperfine
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/hyperfine.deb \
+            https://github.com/sharkdp/hyperfine/releases/download/v1.18.0/hyperfine_1.18.0_amd64.deb
+          sudo dpkg -i /tmp/hyperfine.deb
+          hyperfine --version
+
+      - name: Build wheel
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build --wheel --outdir dist/
+
+      - name: Install wheel into fresh venv
+        run: |
+          set -euo pipefail
+          if [ ! -x .venv-perf/bin/mobius ]; then
+            rm -rf .venv-perf
+            python -m venv .venv-perf
+            .venv-perf/bin/pip install --upgrade pip
+          fi
+          .venv-perf/bin/pip install --upgrade --force-reinstall dist/*.whl
+          .venv-perf/bin/mobius --version
+
+      - name: Seed MOBIUS_HOME (warm fast path for status)
+        run: |
+          set -euo pipefail
+          MOBIUS_HOME="$RUNNER_TEMP/mobius-home"
+          mkdir -p "$MOBIUS_HOME"
+          echo "MOBIUS_HOME=$MOBIUS_HOME" >> "$GITHUB_ENV"
+          NO_COLOR=1 MOBIUS_HOME="$MOBIUS_HOME" .venv-perf/bin/mobius status >/dev/null
+
+      - name: Benchmark `mobius --help`
+        run: |
+          NO_COLOR=1 hyperfine \
+            --warmup 3 --runs 30 \
+            --export-json help.json \
+            '.venv-perf/bin/mobius --help'
+
+      - name: Benchmark `mobius status`
+        run: |
+          NO_COLOR=1 hyperfine \
+            --warmup 3 --runs 30 \
+            --export-json status.json \
+            '.venv-perf/bin/mobius status'
+
+      - name: Assert p95 budgets
+        run: |
+          python bench/ci_perf_guard.py \
+            --label "mobius --help"  --json help.json   --budget-ms "$HELP_BUDGET_MS" \
+            --label "mobius status"  --json status.json --budget-ms "$STATUS_BUDGET_MS"
+
+      - name: Upload hyperfine artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-guard-hyperfine
+          path: |
+            help.json
+            status.json
+          retention-days: 14
