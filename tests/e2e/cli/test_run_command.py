@@ -36,6 +36,28 @@ success_criteria:
     )
 
 
+def write_long_running_spec(path: Path) -> None:
+    path.write_text(
+        """
+project_type: greenfield
+goal: Keep the foreground run alive long enough for signal tests.
+constraints:
+  - Step 1
+  - Step 2
+  - Step 3
+  - Step 4
+  - Step 5
+success_criteria:
+  - Criterion 1
+  - Criterion 2
+  - Criterion 3
+  - Criterion 4
+  - Criterion 5
+""".strip(),
+        encoding="utf-8",
+    )
+
+
 def wait_for_pid_file(mobius_home: Path, run_id: str) -> Path:
     pid_file = mobius_home / "runs" / run_id / "pid"
     deadline = time.monotonic() + 5
@@ -43,6 +65,16 @@ def wait_for_pid_file(mobius_home: Path, run_id: str) -> Path:
         time.sleep(0.05)
     assert pid_file.exists()
     return pid_file
+
+
+def wait_for_any_pid_file(mobius_home: Path) -> Path:
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        matches = list((mobius_home / "runs").glob("run_*/pid"))
+        if matches:
+            return matches[0]
+        time.sleep(0.05)
+    raise AssertionError("foreground run did not write a PID file")
 
 
 def wait_for_no_pid_file(pid_file: Path) -> None:
@@ -58,6 +90,17 @@ def pid_is_live(pid: int) -> bool:
     except ProcessLookupError:
         return False
     return True
+
+
+def start_foreground_run(spec: Path, mobius_home: Path) -> subprocess.Popen[str]:
+    return subprocess.Popen(
+        ["uv", "run", "mobius", "run", "--foreground", "--spec", str(spec)],
+        cwd=PROJECT_ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env={**os.environ, "MOBIUS_HOME": str(mobius_home), "NO_COLOR": "1"},
+    )
 
 
 def test_run_defaults_to_detach_writes_pid_and_cleans_up(tmp_path: Path) -> None:
@@ -100,6 +143,48 @@ def test_run_foreground_blocks_streams_events_and_cleans_pid(tmp_path: Path) -> 
     assert "run.started" in result.stderr
     assert "run.completed" in result.stderr
     assert not list((mobius_home / "runs").glob("*/pid"))
+
+
+def test_run_foreground_sigterm_cancels_and_cleans_pid(tmp_path: Path) -> None:
+    mobius_home = tmp_path / "home"
+    spec = tmp_path / "long.yaml"
+    write_long_running_spec(spec)
+    process = start_foreground_run(spec, mobius_home)
+    pid_file = wait_for_any_pid_file(mobius_home)
+    run_id = pid_file.parent.name
+    worker_pid = int(pid_file.read_text(encoding="utf-8").strip())
+
+    os.kill(worker_pid, signal.SIGTERM)
+    stdout, stderr = process.communicate(timeout=10)
+
+    assert process.returncode == 0
+    assert stdout == ""
+    assert "run.started" in stderr
+    assert not pid_file.exists()
+    status = run_mobius("status", run_id, "--json", mobius_home=mobius_home)
+    assert status.returncode == 0
+    assert json.loads(status.stdout)["state"] == "cancelled"
+
+
+def test_run_foreground_sigint_exits_130_with_interrupted_and_cleans_pid(tmp_path: Path) -> None:
+    mobius_home = tmp_path / "home"
+    spec = tmp_path / "long.yaml"
+    write_long_running_spec(spec)
+    process = start_foreground_run(spec, mobius_home)
+    pid_file = wait_for_any_pid_file(mobius_home)
+    run_id = pid_file.parent.name
+    worker_pid = int(pid_file.read_text(encoding="utf-8").strip())
+
+    os.kill(worker_pid, signal.SIGINT)
+    stdout, stderr = process.communicate(timeout=10)
+
+    assert process.returncode == 130
+    assert stdout == ""
+    assert "interrupted" in stderr
+    assert not pid_file.exists()
+    status = run_mobius("status", run_id, "--json", mobius_home=mobius_home)
+    assert status.returncode == 0
+    assert json.loads(status.stdout)["state"] == "interrupted"
 
 
 def test_run_rejects_invalid_spec_with_exit_3(tmp_path: Path) -> None:

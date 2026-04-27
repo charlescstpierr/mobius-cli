@@ -81,3 +81,21 @@ def test_evaluate_run_qa_returns_none_for_unknown_run(tmp_path: Path) -> None:
     report = evaluate_run_qa(tmp_path / "events.db", "run_missing")
 
     assert report is None
+
+
+def test_evaluate_run_qa_uses_event_store_not_spec_file(tmp_path: Path) -> None:
+    spec = tmp_path / "spec.yaml"
+    write_spec(spec)
+    store_path = tmp_path / "events.db"
+    create_completed_run(store_path, "run_good", spec)
+    spec.unlink()
+
+    report = evaluate_run_qa(store_path, "run_good")
+
+    assert report is not None
+    assert report.summary.failed == 0
+    spec_check = next(
+        result for result in report.results if result.id == "spec_has_success_criteria"
+    )
+    assert spec_check.passed is True
+    assert spec_check.detail == "success_criteria=1"

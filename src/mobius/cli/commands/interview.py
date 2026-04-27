@@ -94,6 +94,7 @@ def run(
                     "answer": answer,
                 },
             )
+        output_path.write_text(spec_yaml, encoding="utf-8")
         store.append_event(
             session_id,
             "interview.completed",
@@ -106,7 +107,6 @@ def run(
         )
         store.end_session(session_id, status="completed")
 
-    output_path.write_text(spec_yaml, encoding="utf-8")
     payload = InterviewOutput(
         session_id=session_id,
         output=str(output_path),

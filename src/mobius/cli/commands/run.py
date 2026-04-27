@@ -61,7 +61,7 @@ def run(
         output.write_error_line("run requires either --detach or --foreground")
         raise typer.Exit(code=int(ExitCode.USAGE))
 
-    pid = start_detached_worker(prepared)
+    pid = start_detached_worker(paths, prepared)
     payload = RunOutput(
         run_id=prepared.run_id,
         mode="detach",

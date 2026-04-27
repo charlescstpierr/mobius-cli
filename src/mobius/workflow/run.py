@@ -72,8 +72,18 @@ def get_run_paths(paths: MobiusPaths, run_id: str) -> RunPaths:
     )
 
 
-def start_detached_worker(prepared: PreparedRun) -> int:
+def start_detached_worker(paths: MobiusPaths, prepared: PreparedRun) -> int:
     """Fork a detached worker process and write its PID file."""
+    with EventStore(paths.event_store) as store:
+        store.create_session(
+            prepared.run_id,
+            runtime="run",
+            metadata={
+                "spec_path": str(prepared.spec_path),
+                "project_type": prepared.spec.project_type,
+            },
+            status="running",
+        )
     prepared.paths.log_file.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     with prepared.paths.log_file.open("ab") as log_file, Path(os.devnull).open("rb") as devnull:
         process = subprocess.Popen(

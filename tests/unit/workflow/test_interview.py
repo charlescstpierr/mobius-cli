@@ -2,6 +2,8 @@ from pathlib import Path
 
 import pytest
 
+from mobius.cli.commands import interview as interview_command
+from mobius.cli.main import CliContext
 from mobius.workflow.interview import (
     AmbiguityGateError,
     InterviewFixture,
@@ -101,3 +103,56 @@ def test_render_spec_yaml_contains_stable_interview_fields() -> None:
     assert "session_id: interview_test" in rendered
     assert "ambiguity_score: 0.0" in rendered
     assert "- Use Typer" in rendered
+
+
+def test_interview_writes_output_before_completed_event(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture_path = tmp_path / "fixture.yaml"
+    output_path = tmp_path / "spec.yaml"
+    fixture_path.write_text(
+        """
+project_type: greenfield
+goal: Produce a durable interview spec.
+constraints:
+  - Write artifact before completion
+success:
+  - Completed event only follows an on-disk spec
+""".strip(),
+        encoding="utf-8",
+    )
+    original_append_event = interview_command.EventStore.append_event
+
+    def assert_spec_exists_on_completed(
+        self: object,
+        aggregate_id: str,
+        event_type: str,
+        payload: object,
+        *,
+        sequence: int | None = None,
+        event_id: str | None = None,
+    ) -> object:
+        if event_type == "interview.completed":
+            assert output_path.exists()
+            assert output_path.read_text(encoding="utf-8")
+        return original_append_event(
+            self,  # type: ignore[arg-type]
+            aggregate_id,
+            event_type,
+            payload,  # type: ignore[arg-type]
+            sequence=sequence,
+            event_id=event_id,
+        )
+
+    monkeypatch.setattr(
+        interview_command.EventStore,
+        "append_event",
+        assert_spec_exists_on_completed,
+    )
+
+    interview_command.run(
+        CliContext(json_output=False, mobius_home=tmp_path / "home"),
+        non_interactive=True,
+        input_path=fixture_path,
+        output_path=output_path,
+    )

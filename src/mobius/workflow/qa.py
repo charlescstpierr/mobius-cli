@@ -8,8 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-from mobius.persistence.event_store import EventStore
-from mobius.workflow.seed import SeedSpecValidationError, load_seed_spec
+from mobius.persistence.event_store import EventRecord, EventStore
 
 _TERMINAL_STATES = frozenset({"completed", "failed", "crashed", "cancelled", "interrupted"})
 _FAILURE_EVENT_TYPES = frozenset({"run.failed", "run.crashed", "run.cancelled", "run.interrupted"})
@@ -61,8 +60,7 @@ def evaluate_run_qa(event_store_path: Path, run_id: str) -> QAReport | None:
         events = store.read_events(run_id)
 
     state = str(session["status"])
-    metadata = _decode_json_object(str(session["metadata"]))
-    spec_criteria_count = _load_success_criteria_count(metadata)
+    spec_criteria_count = _load_success_criteria_count(events)
     event_types = {event.type for event in events}
     failure_events = sorted(event_types & _FAILURE_EVENT_TYPES)
 
@@ -133,14 +131,15 @@ def _decode_json_object(raw: str) -> dict[str, Any]:
     return dict(parsed) if isinstance(parsed, dict) else {}
 
 
-def _load_success_criteria_count(metadata: dict[str, Any]) -> int:
-    spec_path = metadata.get("spec_path")
-    if not isinstance(spec_path, str) or not spec_path:
-        return 0
-    try:
-        return len(load_seed_spec(Path(spec_path)).success_criteria)
-    except SeedSpecValidationError:
-        return 0
+def _load_success_criteria_count(events: list[EventRecord]) -> int:
+    for event in reversed(events):
+        if event.type != "run.completed":
+            continue
+        payload = _decode_json_object(event.payload)
+        count = payload.get("success_criteria_count")
+        if isinstance(count, int):
+            return count
+    return 0
 
 
 def _event_detail(event_type: str, event_types: set[str]) -> str:

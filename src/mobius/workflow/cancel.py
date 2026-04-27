@@ -28,27 +28,24 @@ def cancel_run(paths: MobiusPaths, run_id: str, *, grace_period: float = 10.0) -
     """Cancel a run by PID file, escalating from SIGTERM to SIGKILL if necessary."""
     run_paths = get_run_paths(paths, run_id)
     session_status = _read_session_status(paths, run_id)
+    if session_status is None:
+        return CancelResult.NOT_FOUND
+    if session_status in _TERMINAL_STATES:
+        _cleanup_pid_file(run_paths.pid_file)
+        return CancelResult.ALREADY_FINISHED
 
     if not run_paths.pid_file.exists():
-        if session_status in _TERMINAL_STATES:
-            return CancelResult.ALREADY_FINISHED
-        if session_status is None:
-            return CancelResult.NOT_FOUND
         _mark_cancelled(paths, run_id, pid=None, escalated=False, reason="missing pid file")
         return CancelResult.CANCELLED
 
     pid = _read_pid(run_paths.pid_file)
     if pid is None:
         _cleanup_pid_file(run_paths.pid_file)
-        if session_status is None:
-            return CancelResult.NOT_FOUND
         _mark_cancelled(paths, run_id, pid=None, escalated=False, reason="invalid pid file")
         return CancelResult.CANCELLED
 
     if not _pid_is_live(pid):
         _cleanup_pid_file(run_paths.pid_file)
-        if session_status is None:
-            return CancelResult.NOT_FOUND
         _mark_cancelled(paths, run_id, pid=pid, escalated=False, reason="stale pid file")
         return CancelResult.CANCELLED
 

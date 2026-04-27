@@ -94,6 +94,46 @@ def test_cancel_unknown_run_exits_not_found(tmp_path: Path) -> None:
     assert "not found" in result.stderr.lower()
 
 
+def test_cancel_unknown_run_ignores_fabricated_live_pid(tmp_path: Path) -> None:
+    mobius_home = tmp_path / "home"
+    run_id = "run_does_not_exist"
+    process = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(60)"],
+    )
+    pid_file = mobius_home / "runs" / run_id / "pid"
+    pid_file.parent.mkdir(parents=True, exist_ok=True)
+    pid_file.write_text(f"{process.pid}\n", encoding="utf-8")
+
+    try:
+        result = run_mobius(
+            "cancel",
+            run_id,
+            "--grace-period",
+            "0.01",
+            mobius_home=mobius_home,
+        )
+
+        assert result.returncode == 4
+        assert result.stdout == ""
+        assert "not found" in result.stderr.lower()
+        assert process.poll() is None
+
+        if (mobius_home / "events.db").exists():
+            connection = sqlite3.connect(mobius_home / "events.db")
+            try:
+                session = connection.execute(
+                    "SELECT status FROM sessions WHERE session_id = ?",
+                    (run_id,),
+                ).fetchone()
+            finally:
+                connection.close()
+            assert session is None
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=5)
+
+
 def test_cancel_completed_run_exits_zero_without_pid(tmp_path: Path) -> None:
     mobius_home = tmp_path / "home"
     spec = tmp_path / "spec.yaml"
@@ -114,6 +154,40 @@ def test_cancel_completed_run_exits_zero_without_pid(tmp_path: Path) -> None:
     assert result.returncode == 0
     assert result.stderr == ""
     assert f"already finished {run_id}" in result.stdout
+
+
+def test_cancel_completed_run_removes_stale_live_pid_without_signaling(tmp_path: Path) -> None:
+    mobius_home = tmp_path / "home"
+    spec = tmp_path / "spec.yaml"
+    write_valid_spec(spec)
+    completed = run_mobius("run", "--foreground", "--spec", str(spec), mobius_home=mobius_home)
+    assert completed.returncode == 0
+
+    connection = sqlite3.connect(mobius_home / "events.db")
+    try:
+        run_id = connection.execute(
+            "SELECT session_id FROM sessions WHERE runtime = 'run'"
+        ).fetchone()[0]
+    finally:
+        connection.close()
+
+    process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    pid_file = mobius_home / "runs" / run_id / "pid"
+    pid_file.parent.mkdir(parents=True, exist_ok=True)
+    pid_file.write_text(f"{process.pid}\n", encoding="utf-8")
+
+    try:
+        result = run_mobius("cancel", run_id, "--grace-period", "0.01", mobius_home=mobius_home)
+
+        assert result.returncode == 0
+        assert result.stderr == ""
+        assert f"already finished {run_id}" in result.stdout
+        assert not pid_file.exists()
+        assert process.poll() is None
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=5)
 
 
 def test_cancel_escalates_sigterm_ignoring_process(tmp_path: Path) -> None:

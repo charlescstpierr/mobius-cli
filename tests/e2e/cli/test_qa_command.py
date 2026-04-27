@@ -66,6 +66,28 @@ def test_qa_offline_json_passes_completed_run(tmp_path: Path) -> None:
     assert payload["results"]
 
 
+def test_qa_offline_uses_event_store_when_spec_file_deleted(tmp_path: Path) -> None:
+    mobius_home = tmp_path / "home"
+    spec = tmp_path / "spec.yaml"
+    write_valid_spec(spec)
+    run_result = run_mobius("run", "--foreground", "--spec", str(spec), mobius_home=mobius_home)
+    assert run_result.returncode == 0
+    run_id = next((mobius_home / "runs").glob("run_*/metadata.json")).parent.name
+    spec.unlink()
+
+    qa_result = run_mobius("qa", run_id, "--offline", "--json", mobius_home=mobius_home)
+
+    assert qa_result.returncode == 0
+    assert qa_result.stderr == ""
+    payload = json.loads(qa_result.stdout)
+    assert payload["summary"]["failed"] == 0
+    spec_result = next(
+        result for result in payload["results"] if result["id"] == "spec_has_success_criteria"
+    )
+    assert spec_result["passed"] is True
+    assert spec_result["detail"] == "success_criteria=1"
+
+
 def test_qa_json_fails_known_bad_run(tmp_path: Path) -> None:
     mobius_home = tmp_path / "home"
     spec = tmp_path / "spec.yaml"
