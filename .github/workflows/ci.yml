@@ -1,0 +1,119 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: lint (ruff + mypy)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Run ruff check
+        run: uv run ruff check src/ tests/
+
+      - name: Run ruff format check
+        run: uv run ruff format --check src/ tests/
+
+      - name: Run mypy strict
+        run: uv run mypy --strict src/mobius/
+
+  test:
+    name: test (pytest + chaos)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Run pytest
+        run: uv run pytest -q
+
+      - name: Run chaos suite
+        run: uv run pytest tests/chaos/ -q
+
+  build:
+    name: build (uv build + smoke)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Build wheel and sdist
+        run: uv build
+
+      - name: Smoke install wheel
+        run: |
+          python -m venv /tmp/mobius-smoke
+          /tmp/mobius-smoke/bin/pip install dist/*.whl
+          MOBIUS_HOME="$(mktemp -d)" NO_COLOR=1 /tmp/mobius-smoke/bin/mobius --help
+
+      - name: Verify wheel has no MCP dependency
+        run: |
+          if unzip -p dist/mobius-*.whl '*METADATA' | grep -i '^Requires-Dist:' | grep -i 'mcp'; then
+            echo "Wheel METADATA must not declare an mcp dependency" >&2
+            exit 1
+          fi
+
+  bench:
+    name: bench (cold_start + status)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Run cold-start benchmark
+        run: uv run python bench/cold_start.py
+
+      - name: Run status benchmark
+        run: uv run python bench/status.py
