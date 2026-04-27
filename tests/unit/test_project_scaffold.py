@@ -17,6 +17,15 @@ def test_no_mcp_dependency_declared() -> None:
     assert all(not dependency.lower().startswith(("mcp", "mcp-sdk")) for dependency in dependencies)
 
 
+def test_release_lint_and_typecheck_configured() -> None:
+    pyproject = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text())
+
+    assert pyproject["tool"]["ruff"]["src"] == ["src"]
+    assert pyproject["tool"]["ruff"]["lint"]["select"] == ["E", "F", "I", "UP", "B", "SIM"]
+    assert pyproject["tool"]["mypy"]["strict"] is True
+    assert pyproject["tool"]["mypy"]["files"] == ["src/mobius"]
+
+
 def test_license_and_notice_present() -> None:
     assert (PROJECT_ROOT / "LICENSE").read_text().startswith("MIT License")
 

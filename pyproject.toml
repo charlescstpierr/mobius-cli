@@ -36,14 +36,19 @@ module-name = "mobius"
 [tool.ruff]
 target-version = "py312"
 line-length = 100
+src = ["src"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
 [tool.mypy]
 python_version = "3.12"
 strict = true
-packages = ["mobius"]
+files = ["src/mobius"]
 
 [tool.pytest.ini_options]
 addopts = "--cov=src/mobius --cov-report=term-missing --cov-fail-under=80"
