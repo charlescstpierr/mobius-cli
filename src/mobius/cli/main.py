@@ -45,7 +45,6 @@ class CommandModule(Protocol):
 
 
 COMMAND_MODULES: dict[str, str] = {
-    "evolve": "mobius.cli.commands.evolve",
     "lineage": "mobius.cli.commands.lineage",
     "setup": "mobius.cli.commands.setup",
 }
@@ -206,6 +205,50 @@ def run_command(
     cast(Any, module).run(
         ctx.obj,
         spec_path=spec_path,
+        detach=detach,
+        foreground=foreground,
+    )
+
+
+@app.command(name="evolve", help="Run a Mobius generation evolution loop.")
+def evolve_command(
+    ctx: typer.Context,
+    source_run_id: Annotated[
+        str,
+        typer.Option(
+            "--from",
+            help="Completed run id to use as the evolution source.",
+        ),
+    ],
+    generations: Annotated[
+        int,
+        typer.Option(
+            "--generations",
+            min=1,
+            help="Maximum generation count (hard-capped at 30).",
+        ),
+    ] = 30,
+    detach: Annotated[
+        bool,
+        typer.Option(
+            "--detach",
+            help="Start a background worker and immediately print the evolution id.",
+        ),
+    ] = True,
+    foreground: Annotated[
+        bool,
+        typer.Option(
+            "--foreground",
+            help="Run in the current process and stream generation events to stderr.",
+        ),
+    ] = False,
+) -> None:
+    """Start a detached evolution by default."""
+    module = importlib.import_module("mobius.cli.commands.evolve")
+    cast(Any, module).run(
+        ctx.obj,
+        source_run_id=source_run_id,
+        generations=generations,
         detach=detach,
         foreground=foreground,
     )
@@ -445,6 +488,16 @@ def worker_run_command(
     """Execute a prepared run. Internal command, not part of the public CLI."""
     module = importlib.import_module("mobius.cli.commands.run")
     cast(Any, module).worker_run(ctx.obj, run_id=run_id)
+
+
+@worker_app.command(name="evolve")
+def worker_evolve_command(
+    ctx: typer.Context,
+    evolution_id: Annotated[str, typer.Argument(help="Prepared evolution id to execute.")],
+) -> None:
+    """Execute a prepared evolution. Internal command, not part of the public CLI."""
+    module = importlib.import_module("mobius.cli.commands.evolve")
+    cast(Any, module).worker_evolve(ctx.obj, evolution_id=evolution_id)
 
 
 app.add_typer(worker_app, name="_worker", hidden=True)

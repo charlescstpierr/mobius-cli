@@ -99,7 +99,6 @@ def start_detached_worker(paths: MobiusPaths, prepared: PreparedRun) -> int:
 
 def run_foreground(paths: MobiusPaths, prepared: PreparedRun) -> int:
     """Execute a run in the current process, streaming progress to stderr."""
-    _write_pid(prepared.paths.pid_file, os.getpid())
     return execute_run(paths, prepared.run_id, stream_events=True)
 
 
@@ -133,6 +132,7 @@ def execute_run(paths: MobiusPaths, run_id: str, *, stream_events: bool) -> int:
                 {"spec_path": str(spec_path), "goal": spec.goal},
                 stream_events=stream_events,
             )
+            _write_pid(run_paths.pid_file, os.getpid())
             _sleep_with_heartbeats(store, run_id, spec, stream_events=stream_events)
             _append_and_emit(
                 store,

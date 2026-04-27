@@ -11,6 +11,7 @@ from pathlib import Path
 
 from mobius.config import MobiusPaths
 from mobius.persistence.event_store import EventStore
+from mobius.workflow.evolve import get_evolution_paths
 from mobius.workflow.run import get_run_paths
 
 _TERMINAL_STATES = frozenset({"completed", "failed", "crashed", "cancelled", "interrupted"})
@@ -26,32 +27,54 @@ class CancelResult(StrEnum):
 
 def cancel_run(paths: MobiusPaths, run_id: str, *, grace_period: float = 10.0) -> CancelResult:
     """Cancel a run by PID file, escalating from SIGTERM to SIGKILL if necessary."""
-    run_paths = get_run_paths(paths, run_id)
-    session_status = _read_session_status(paths, run_id)
-    if session_status is None:
+    session = _read_session(paths, run_id)
+    if session is None:
         return CancelResult.NOT_FOUND
+    runtime, session_status = session
+    pid_file = _pid_file_for_runtime(paths, run_id, runtime)
     if session_status in _TERMINAL_STATES:
-        _cleanup_pid_file(run_paths.pid_file)
+        _cleanup_pid_file(pid_file)
         return CancelResult.ALREADY_FINISHED
 
-    if not run_paths.pid_file.exists():
-        _mark_cancelled(paths, run_id, pid=None, escalated=False, reason="missing pid file")
+    if not pid_file.exists():
+        _mark_cancelled(
+            paths,
+            run_id,
+            runtime=runtime,
+            pid=None,
+            escalated=False,
+            reason="missing pid file",
+        )
         return CancelResult.CANCELLED
 
-    pid = _read_pid(run_paths.pid_file)
+    pid = _read_pid(pid_file)
     if pid is None:
-        _cleanup_pid_file(run_paths.pid_file)
-        _mark_cancelled(paths, run_id, pid=None, escalated=False, reason="invalid pid file")
+        _cleanup_pid_file(pid_file)
+        _mark_cancelled(
+            paths,
+            run_id,
+            runtime=runtime,
+            pid=None,
+            escalated=False,
+            reason="invalid pid file",
+        )
         return CancelResult.CANCELLED
 
     if not _pid_is_live(pid):
-        _cleanup_pid_file(run_paths.pid_file)
-        _mark_cancelled(paths, run_id, pid=pid, escalated=False, reason="stale pid file")
+        _cleanup_pid_file(pid_file)
+        _mark_cancelled(
+            paths,
+            run_id,
+            runtime=runtime,
+            pid=pid,
+            escalated=False,
+            reason="stale pid file",
+        )
         return CancelResult.CANCELLED
 
     escalated = _terminate_process(pid, grace_period=grace_period)
-    _cleanup_pid_file(run_paths.pid_file)
-    _mark_cancelled(paths, run_id, pid=pid, escalated=escalated)
+    _cleanup_pid_file(pid_file)
+    _mark_cancelled(paths, run_id, runtime=runtime, pid=pid, escalated=escalated)
     return CancelResult.CANCELLED
 
 
@@ -77,6 +100,7 @@ def _mark_cancelled(
     paths: MobiusPaths,
     run_id: str,
     *,
+    runtime: str,
     pid: int | None,
     escalated: bool,
     reason: str = "cancel requested",
@@ -84,25 +108,31 @@ def _mark_cancelled(
     with EventStore(paths.event_store) as store:
         store.create_session(
             run_id,
-            runtime="run",
+            runtime=runtime,
             metadata={"reason": reason},
             status="running",
         )
-        store.append_event(run_id, "run.cancelled", {"pid": pid, "escalated": escalated})
+        store.append_event(run_id, f"{runtime}.cancelled", {"pid": pid, "escalated": escalated})
         store.end_session(run_id, status="cancelled")
 
 
-def _read_session_status(paths: MobiusPaths, run_id: str) -> str | None:
+def _read_session(paths: MobiusPaths, run_id: str) -> tuple[str, str] | None:
     if not paths.event_store.exists():
         return None
     with EventStore(paths.event_store) as store:
         row = store._connection.execute(
-            "SELECT status FROM sessions WHERE session_id = ?",
+            "SELECT runtime, status FROM sessions WHERE session_id = ?",
             (run_id,),
         ).fetchone()
     if row is None:
         return None
-    return str(row["status"])
+    return str(row["runtime"]), str(row["status"])
+
+
+def _pid_file_for_runtime(paths: MobiusPaths, session_id: str, runtime: str) -> Path:
+    if runtime == "evolution":
+        return get_evolution_paths(paths, session_id).pid_file
+    return get_run_paths(paths, session_id).pid_file
 
 
 def _read_pid(pid_file: os.PathLike[str]) -> int | None:
