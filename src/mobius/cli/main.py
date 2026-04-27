@@ -44,9 +44,7 @@ class CommandModule(Protocol):
         """Run the command with the shared CLI context."""
 
 
-COMMAND_MODULES: dict[str, str] = {
-    "setup": "mobius.cli.commands.setup",
-}
+COMMAND_MODULES: dict[str, str] = {}
 
 
 app = typer.Typer(
@@ -114,6 +112,49 @@ def _make_lazy_command(module_name: str) -> Callable[[typer.Context], None]:
 for command_name, module_name in COMMAND_MODULES.items():
     app.command(name=command_name, help="Stub command; implementation pending.")(
         _make_lazy_command(module_name)
+    )
+
+
+@app.command(name="setup", help="Install or remove Mobius agent integration assets.")
+def setup_command(
+    ctx: typer.Context,
+    runtime: Annotated[
+        str,
+        typer.Option(
+            "--runtime",
+            help="Agent runtime to configure: claude, codex, or hermes.",
+        ),
+    ],
+    scope: Annotated[
+        str,
+        typer.Option(
+            "--scope",
+            help="Installation scope: user installs under the home directory; project under cwd.",
+        ),
+    ] = "user",
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run",
+            help="Print planned actions without writing to the filesystem.",
+        ),
+    ] = False,
+    uninstall: Annotated[
+        bool,
+        typer.Option(
+            "--uninstall",
+            help="Remove only assets previously installed by Mobius.",
+        ),
+    ] = False,
+) -> None:
+    """Install, inspect, or remove Mobius integration assets without registering MCP."""
+    module = importlib.import_module("mobius.cli.commands.setup")
+    cast(Any, module).run(
+        ctx.obj,
+        runtime=runtime,
+        scope=scope,
+        dry_run=dry_run,
+        uninstall=uninstall,
     )
 
 

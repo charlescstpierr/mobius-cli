@@ -77,6 +77,7 @@ def test_stub_commands_print_not_implemented_and_exit_cleanly() -> None:
             "qa",
             "run",
             "seed",
+            "setup",
             "status",
         }
     ]:
