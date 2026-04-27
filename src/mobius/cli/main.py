@@ -45,7 +45,6 @@ class CommandModule(Protocol):
 
 
 COMMAND_MODULES: dict[str, str] = {
-    "ac-tree": "mobius.cli.commands.ac_tree",
     "qa": "mobius.cli.commands.qa",
     "cancel": "mobius.cli.commands.cancel",
     "evolve": "mobius.cli.commands.evolve",
@@ -158,6 +157,48 @@ def run_command(
         spec_path=spec_path,
         detach=detach,
         foreground=foreground,
+    )
+
+
+@app.command(name="ac-tree", help="Print a compact acceptance-criteria tree for a run.")
+def ac_tree_command(
+    ctx: typer.Context,
+    run_id: Annotated[
+        str,
+        typer.Argument(help="Run id to visualize."),
+    ],
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Emit machine-readable JSON with nodes[] and edges[].",
+        ),
+    ] = False,
+    cursor: Annotated[
+        int,
+        typer.Option(
+            "--cursor",
+            min=0,
+            help="Only include event delta nodes after this event sequence.",
+        ),
+    ] = 0,
+    max_nodes: Annotated[
+        int,
+        typer.Option(
+            "--max-nodes",
+            min=5,
+            help="Maximum nodes to emit before adding a truncation marker.",
+        ),
+    ] = 50,
+) -> None:
+    """Render the run's compact AC tree."""
+    module = importlib.import_module("mobius.cli.commands.ac_tree")
+    cast(Any, module).run(
+        ctx.obj,
+        run_id,
+        json_output=json_output,
+        cursor=cursor,
+        max_nodes=max_nodes,
     )
 
 
