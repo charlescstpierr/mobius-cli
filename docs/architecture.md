@@ -13,7 +13,9 @@ implements fast paths for latency-sensitive commands:
 
 - `mobius --help`
 - `mobius --version`
-- `mobius status <id>` without `--follow` or `--read-only`
+- `mobius status` (with or without a run id, when neither `--follow` nor
+  `--read-only` is set)
+- `mobius init [PATH]` — workspace scaffolding introduced in `v0.1.1`
 
 Those paths avoid importing Typer/Rich and avoid loading workflow modules. For
 all other commands, `src/mobius/cli/main.py` registers lightweight Typer command
@@ -49,6 +51,15 @@ work to `src/mobius/persistence/`.
 
 There is no daemon and no MCP stdio server. Each command can be retried by
 re-reading the event store.
+
+## Workspace bootstrap
+
+`mobius init [PATH]` (added in `v0.1.1`) writes a starter `spec.yaml` into the
+target directory and initializes the Mobius event store inline so a fresh
+checkout can run `mobius run --spec spec.yaml` without any further setup. The
+inline bootstrap reuses the same fast path as `mobius status` against an empty
+`MOBIUS_HOME`, so initialization stays under the cold-start budget documented
+in [`benchmarks.md`](benchmarks.md).
 
 ## Filesystem layout
 
