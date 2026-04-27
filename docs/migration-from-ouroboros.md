@@ -1,5 +1,7 @@
 # Migration from Ouroboros MCP Tools
 
+Mobius repository: <https://github.com/charlescstpierr/mobius-cli>
+
 Mobius replaces Ouroboros MCP tool calls with direct shell commands. The new
 contract is: invoke `mobius ...`, read command data from stdout, and read logs or
 progress from stderr.

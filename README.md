@@ -1,9 +1,21 @@
 # Mobius
 
+[![CI](https://github.com/charlescstpierr/mobius-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/charlescstpierr/mobius-cli/actions/workflows/ci.yml)
+
+Repository: <https://github.com/charlescstpierr/mobius-cli>
+
 Mobius is a from-scratch Python CLI rewrite inspired by
 [Q00/ouroboros](https://github.com/Q00/ouroboros). It keeps the interview,
 seed, execution, QA, and evolution workflow ideas, but exposes them as fast
 one-shot shell commands instead of a long-running MCP server.
+
+## Install
+
+Install the published CLI directly from the GitHub repository with either
+[`uv`](https://docs.astral.sh/uv/) or [`pipx`](https://pipx.pypa.io/):
+
+- `uv tool install git+https://github.com/charlescstpierr/mobius-cli`
+- `pipx install git+https://github.com/charlescstpierr/mobius-cli`
 
 ## Quickstart
 

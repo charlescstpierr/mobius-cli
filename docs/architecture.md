@@ -1,5 +1,7 @@
 # Mobius Architecture
 
+Repository: <https://github.com/charlescstpierr/mobius-cli>
+
 Mobius is a CLI-only workflow runtime. Every public operation is a short-lived
 process, and long-running work is delegated to detached worker subprocesses whose
 state is recoverable from SQLite.
