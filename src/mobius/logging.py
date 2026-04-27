@@ -56,5 +56,6 @@ def configure_logging(
 
 def get_logger(name: str) -> logging.Logger:
     """Return a stdlib logger after ensuring stderr-only logging is configured."""
-    configure_logging()
+    if not logging.getLogger().handlers:
+        configure_logging()
     return logging.getLogger(name)
