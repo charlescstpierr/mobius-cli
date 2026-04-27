@@ -1,6 +1,14 @@
 # Mobius
 
 [![CI](https://github.com/charlescstpierr/mobius-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/charlescstpierr/mobius-cli/actions/workflows/ci.yml)
+[![Coverage](https://img.shields.io/badge/coverage-%E2%89%A595%25-brightgreen.svg)](docs/benchmarks.md)
+[![PyPI](https://img.shields.io/badge/pypi-pending-lightgrey.svg)](https://github.com/charlescstpierr/mobius-cli/releases)
+[![License](https://img.shields.io/github/license/charlescstpierr/mobius-cli)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](pyproject.toml)
+
+See [`CHANGELOG.md`](CHANGELOG.md) for release notes,
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for development setup,
+and [`SECURITY.md`](SECURITY.md) for vulnerability reporting.
 
 Repository: <https://github.com/charlescstpierr/mobius-cli>
 

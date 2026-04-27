@@ -35,6 +35,23 @@ progress from stderr.
 | `ouroboros_evolve_rewind` | `mobius lineage <id> --hash` plus a new run/evolve command | Mobius does not mutate history in place; use lineage to select a prior aggregate and start a new command. |
 | `ouroboros_brownfield` | `mobius interview --non-interactive --input <brownfield-fixture> --output <spec.yaml>` | Brownfield context is represented in the spec fixture with `project_type: brownfield` and `context`. |
 
+## Bootstrapping a workspace
+
+There is no Ouroboros equivalent to `mobius init`. Starting in `v0.1.1`, a new
+workspace can be created with:
+
+```bash
+mkdir my-project && cd my-project
+mobius init
+# edit the generated spec.yaml, then:
+mobius run --spec spec.yaml
+mobius status
+```
+
+`mobius init` writes a starter `spec.yaml`, initializes the event store, and
+returns within the standard cold-start budget (`mobius status` p95 ≤ 130 ms on
+the CI runner; see [`benchmarks.md`](benchmarks.md)).
+
 ## Agent invocation changes
 
 Old agents called MCP tools by name. New agents should shell out:
