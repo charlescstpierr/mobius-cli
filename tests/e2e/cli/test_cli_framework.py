@@ -64,7 +64,9 @@ def test_version_prints_single_semver_line() -> None:
 
 def test_stub_commands_print_not_implemented_and_exit_cleanly() -> None:
     for command in [
-        command for command in COMMANDS if command not in {"config", "interview", "seed", "status"}
+        command
+        for command in COMMANDS
+        if command not in {"config", "interview", "run", "seed", "status"}
     ]:
         result = run_mobius(command)
 

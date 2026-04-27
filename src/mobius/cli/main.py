@@ -45,7 +45,6 @@ class CommandModule(Protocol):
 
 
 COMMAND_MODULES: dict[str, str] = {
-    "run": "mobius.cli.commands.run",
     "ac-tree": "mobius.cli.commands.ac_tree",
     "qa": "mobius.cli.commands.qa",
     "cancel": "mobius.cli.commands.cancel",
@@ -120,6 +119,45 @@ def _make_lazy_command(module_name: str) -> Callable[[typer.Context], None]:
 for command_name, module_name in COMMAND_MODULES.items():
     app.command(name=command_name, help="Stub command; implementation pending.")(
         _make_lazy_command(module_name)
+    )
+
+
+@app.command(name="run", help="Execute a Mobius seed spec.")
+def run_command(
+    ctx: typer.Context,
+    spec_path: Annotated[
+        Path,
+        typer.Option(
+            "--spec",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+            help="Seed spec file to execute.",
+        ),
+    ],
+    detach: Annotated[
+        bool,
+        typer.Option(
+            "--detach",
+            help="Start a background worker and immediately print the run id.",
+        ),
+    ] = True,
+    foreground: Annotated[
+        bool,
+        typer.Option(
+            "--foreground",
+            help="Run in the current process and stream events to stderr.",
+        ),
+    ] = False,
+) -> None:
+    """Validate a seed spec and execute it as a run."""
+    module = importlib.import_module("mobius.cli.commands.run")
+    cast(Any, module).run(
+        ctx.obj,
+        spec_path=spec_path,
+        detach=detach,
+        foreground=foreground,
     )
 
 
@@ -285,6 +323,26 @@ def config_set(
 
 
 app.add_typer(config_app, name="config")
+
+
+worker_app = typer.Typer(
+    add_completion=False,
+    context_settings={"help_option_names": ["-h", "--help"]},
+    help="Internal Mobius worker commands.",
+)
+
+
+@worker_app.command(name="run")
+def worker_run_command(
+    ctx: typer.Context,
+    run_id: Annotated[str, typer.Argument(help="Prepared run id to execute.")],
+) -> None:
+    """Execute a prepared run. Internal command, not part of the public CLI."""
+    module = importlib.import_module("mobius.cli.commands.run")
+    cast(Any, module).worker_run(ctx.obj, run_id=run_id)
+
+
+app.add_typer(worker_app, name="_worker", hidden=True)
 
 
 def main() -> None:
