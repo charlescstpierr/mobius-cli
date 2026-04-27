@@ -19,11 +19,30 @@ one-shot shell commands instead of a long-running MCP server.
 
 ## Install
 
-Install the published CLI directly from the GitHub repository with either
-[`uv`](https://docs.astral.sh/uv/) or [`pipx`](https://pipx.pypa.io/):
+Pick whichever installer you already use:
 
-- `uv tool install git+https://github.com/charlescstpierr/mobius-cli`
-- `pipx install git+https://github.com/charlescstpierr/mobius-cli`
+- **`pip`** (no extra tools required) — install the latest release wheel
+  directly from GitHub:
+
+  ```sh
+  pip install https://github.com/charlescstpierr/mobius-cli/releases/latest/download/mobius-0.1.3-py3-none-any.whl
+  ```
+
+  Replace the version in the URL with the [release](https://github.com/charlescstpierr/mobius-cli/releases)
+  you want, or download the wheel and run `pip install ./mobius-0.1.3-py3-none-any.whl`.
+
+- **`uv`** — `uv tool install git+https://github.com/charlescstpierr/mobius-cli`
+- **`pipx`** — `pipx install git+https://github.com/charlescstpierr/mobius-cli`
+
+### State directory
+
+Mobius stores all session state in a SQLite event store at
+`$MOBIUS_HOME/events.db`. When `MOBIUS_HOME` is not set the default is
+`~/.mobius/events.db` (a global path **shared across every Mobius project**).
+Set `MOBIUS_HOME` per-project — for example `export MOBIUS_HOME="$PWD/.mobius"`
+— if you want each workspace to have its own event store. `mobius init` prints
+the resolved path on first run; `mobius config get event_store` returns it any
+time.
 
 ## Quickstart
 

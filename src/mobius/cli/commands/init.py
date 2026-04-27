@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -52,10 +53,21 @@ def run(
     with EventStore(paths.event_store):
         pass
 
+    mobius_home = paths.home
+    home_was_set = "MOBIUS_HOME" in os.environ
+    home_note = (
+        "MOBIUS_HOME from environment"
+        if home_was_set
+        else "MOBIUS_HOME not set; using default ~/.mobius (shared across projects)"
+    )
     sys.stdout.write(
         f"workspace={workspace}\n"
         f"spec={spec_path}\n"
+        f"mobius_home={mobius_home}\n"
         f"event_store={paths.event_store}\n"
+        f"# {home_note}\n"
+        "# Tip: set MOBIUS_HOME per-project for an isolated event store, e.g.\n"
+        f'#   export MOBIUS_HOME="{workspace}/.mobius"\n'
         "next steps:\n"
         f"  edit {STARTER_SPEC_FILENAME} to describe your project\n"
         f"  mobius run --spec {STARTER_SPEC_FILENAME}\n"
