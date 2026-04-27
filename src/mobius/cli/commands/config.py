@@ -69,10 +69,15 @@ def show(context: CliContext, *, json_output: bool = False) -> None:
         output.write_line(f"{key}={value}")
 
 
+_DERIVED_KEYS = ("state_dir", "event_store", "config_file")
+
+
 def get(context: CliContext, key: str, *, json_output: bool = False) -> None:
-    """Get one config value."""
+    """Get one config value, including derived paths surfaced by `config show`."""
     loaded = load_config(context.mobius_home)
     value = loaded.config.get_value(key)
+    if value is None and key in _DERIVED_KEYS:
+        value = str(getattr(loaded.paths, key))
     if value is None:
         output.write_error_line(f"config key not found: {key}")
         raise typer.Exit(code=int(ExitCode.NOT_FOUND))
