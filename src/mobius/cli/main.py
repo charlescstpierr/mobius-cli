@@ -115,6 +115,28 @@ for command_name, module_name in COMMAND_MODULES.items():
     )
 
 
+@app.command(name="init", help="Scaffold a new Mobius workspace at PATH.")
+def init_command(
+    ctx: typer.Context,
+    target: Annotated[
+        Path,
+        typer.Argument(
+            help="Workspace directory to initialize (defaults to the current directory).",
+        ),
+    ] = Path("."),
+    force: Annotated[
+        bool,
+        typer.Option(
+            "--force",
+            help="Overwrite an existing spec.yaml in the target directory.",
+        ),
+    ] = False,
+) -> None:
+    """Create a starter spec.yaml and initialize the Mobius event store."""
+    module = importlib.import_module("mobius.cli.commands.init")
+    cast(Any, module).run(ctx.obj, target, force=force)
+
+
 @app.command(name="setup", help="Install or remove Mobius agent integration assets.")
 def setup_command(
     ctx: typer.Context,

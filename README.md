@@ -19,8 +19,8 @@ Install the published CLI directly from the GitHub repository with either
 
 ## Quickstart
 
-Run these first three blocks from the repository root. They install the
-`mobius` command and exercise the CLI end-to-end in an isolated state directory.
+Run these blocks from the repository root. They install the `mobius` command
+and exercise the CLI end-to-end in an isolated state directory.
 
 ```bash
 uv tool install . --force
@@ -49,10 +49,22 @@ run_id="$(mobius run --spec /tmp/mobius-spec.yaml)"
 mobius status "$run_id" --follow
 ```
 
+The fastest way to start a real workspace is `mobius init`, which writes a
+starter `spec.yaml` and initializes the Mobius event store:
+
+```bash
+mkdir my-project && cd my-project
+mobius init
+# edit spec.yaml, then:
+mobius run --spec spec.yaml
+mobius status
+```
+
 ## Command map
 
 Common workflows:
 
+- `mobius init [PATH]` — scaffold a workspace with a starter `spec.yaml`
 - `mobius interview --non-interactive --input fixture.yaml --output spec.yaml`
 - `mobius seed spec.yaml --json`
 - `mobius run --spec spec.yaml` (detached by default)

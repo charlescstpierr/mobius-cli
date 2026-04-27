@@ -15,6 +15,8 @@ from typing import NoReturn
 from mobius import __version__
 
 _TERMINAL_STATES = frozenset({"completed", "failed", "crashed", "cancelled", "interrupted"})
+# Latest applied SQLite schema version. Kept in sync with mobius.persistence.event_store.MIGRATIONS.
+_LATEST_SCHEMA_VERSION = 1
 
 
 def main() -> None:
@@ -35,6 +37,8 @@ def _try_fast_path(argv: list[str]) -> bool:
     if argv == ["--version"]:
         sys.stdout.write(f"mobius {__version__}\n")
         return True
+    if _try_fast_store_status(argv):
+        return True
     return bool(_try_fast_status(argv))
 
 
@@ -50,6 +54,7 @@ Options:
   -h, --help Show this message and exit.
 
 Commands:
+  init       Scaffold a new Mobius workspace at PATH.
   interview  Run the project interview and produce a spec.
   seed       Create a seed session from a project spec or interview session.
   run        Execute a Mobius seed spec.
@@ -63,6 +68,80 @@ Commands:
   config     Show, get, and set Mobius configuration.
 """
     )
+
+
+def _try_fast_store_status(argv: list[str]) -> bool:
+    """Fast path for ``mobius status`` with no run id (store-level status).
+
+    This path avoids importing rich, pydantic, and workflow modules. It only
+    runs when the schema_migrations table already contains the latest version,
+    so the slow path (which applies migrations) is still reached on first
+    invocation or when the migrations row is missing.
+    """
+    json_output = False
+    remaining = list(argv)
+    if remaining and remaining[0] == "--json":
+        json_output = True
+        remaining.pop(0)
+    if remaining != ["status"] and remaining != ["status", "--json"]:
+        return False
+    options = remaining[1:]
+    if "--json" in options:
+        json_output = True
+        options.remove("--json")
+    if options:
+        return False
+
+    mobius_home = Path(os.environ.get("MOBIUS_HOME", str(Path.home() / ".mobius"))).expanduser()
+    db_path = mobius_home / "events.db"
+
+    if not db_path.exists():
+        # Bootstrap the store inline so first-run still hits the fast budget.
+        try:
+            _fast_bootstrap_store(mobius_home, db_path)
+        except (OSError, sqlite3.Error):
+            return False
+
+    try:
+        connection = _connect(db_path, read_only=True)
+    except sqlite3.Error:
+        return False
+    try:
+        try:
+            row = connection.execute(
+                "SELECT count(*) FROM schema_migrations WHERE version = ?",
+                (_LATEST_SCHEMA_VERSION,),
+            ).fetchone()
+        except sqlite3.Error:
+            return False
+        if row is None or int(row[0]) == 0:
+            return False
+        migration_count = connection.execute("SELECT count(*) FROM schema_migrations").fetchone()
+        event_count = connection.execute("SELECT count(*) FROM events").fetchone()
+        integrity_row = connection.execute("PRAGMA integrity_check").fetchone()
+    finally:
+        connection.close()
+
+    integrity_check = str(integrity_row[0]) if integrity_row is not None else ""
+    migrations_applied = int(migration_count[0]) > 0
+    payload = {
+        "event_store": str(db_path),
+        "read_only": False,
+        "migrations_applied": migrations_applied,
+        "integrity_check": integrity_check,
+        "event_count": int(event_count[0]),
+    }
+    if json_output:
+        sys.stdout.write(json.dumps(payload, separators=(",", ":")) + "\n")
+        return True
+    sys.stdout.write(
+        f"event_store={payload['event_store']}\n"
+        f"read_only={str(payload['read_only']).lower()}\n"
+        f"migrations_applied={str(payload['migrations_applied']).lower()}\n"
+        f"integrity_check={payload['integrity_check']}\n"
+        f"event_count={payload['event_count']}\n"
+    )
+    return True
 
 
 def _try_fast_status(argv: list[str]) -> bool:
@@ -178,6 +257,101 @@ def _mark_stale_session_if_needed(mobius_home: Path, db_path: Path, session_id: 
             "UPDATE sessions SET ended_at = ?, status = ? WHERE session_id = ?",
             (ended_at, "crashed", session_id),
         )
+
+
+_FAST_BOOTSTRAP_SQL = """
+CREATE TABLE IF NOT EXISTS events (
+    event_id TEXT PRIMARY KEY,
+    aggregate_id TEXT NOT NULL,
+    sequence INTEGER NOT NULL,
+    type TEXT NOT NULL,
+    payload TEXT NOT NULL CHECK (json_valid(payload)),
+    created_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_events_aggregate_sequence
+    ON events (aggregate_id, sequence);
+CREATE INDEX IF NOT EXISTS idx_events_aggregate_id
+    ON events (aggregate_id);
+CREATE TABLE IF NOT EXISTS sessions (
+    session_id TEXT PRIMARY KEY,
+    started_at TEXT NOT NULL,
+    ended_at TEXT,
+    runtime TEXT NOT NULL,
+    metadata TEXT NOT NULL CHECK (json_valid(metadata)),
+    status TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS aggregates (
+    aggregate_id TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    last_sequence INTEGER NOT NULL,
+    snapshot TEXT NOT NULL CHECK (json_valid(snapshot)),
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version INTEGER PRIMARY KEY,
+    applied_at TEXT NOT NULL
+);
+"""
+
+
+def _fast_bootstrap_store(mobius_home: Path, db_path: Path) -> None:
+    """Create the event store and apply the initial migration without imports."""
+    mobius_home.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(mobius_home, 0o700)
+    connection = sqlite3.connect(db_path, timeout=30.0, isolation_level=None)
+    try:
+        os.chmod(db_path, 0o600)
+        connection.execute("PRAGMA busy_timeout=30000")
+        connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("PRAGMA synchronous=NORMAL")
+        connection.execute("PRAGMA foreign_keys=ON")
+        connection.executescript(_FAST_BOOTSTRAP_SQL)
+        applied_at = _iso8601_utc_now()
+        connection.execute(
+            "INSERT OR REPLACE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+            (_LATEST_SCHEMA_VERSION, applied_at),
+        )
+        payload = json.dumps(
+            {"schema_version": _LATEST_SCHEMA_VERSION},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO events(
+                    event_id, aggregate_id, sequence, type, payload, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "mobius-bootstrap-v1",
+                    "mobius.bootstrap",
+                    1,
+                    "mobius.bootstrap",
+                    payload,
+                    applied_at,
+                ),
+            )
+            connection.execute(
+                """
+                INSERT INTO aggregates(aggregate_id, type, last_sequence, snapshot, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(aggregate_id) DO UPDATE SET
+                    type = excluded.type,
+                    last_sequence = MAX(aggregates.last_sequence, excluded.last_sequence),
+                    updated_at = excluded.updated_at
+                """,
+                ("mobius.bootstrap", "mobius.bootstrap", 1, "{}", applied_at),
+            )
+        except BaseException:
+            connection.execute("ROLLBACK")
+            raise
+        else:
+            connection.execute("COMMIT")
+    finally:
+        connection.close()
 
 
 def _connect(db_path: Path, *, read_only: bool) -> sqlite3.Connection:

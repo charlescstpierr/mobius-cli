@@ -23,6 +23,31 @@ Mobius is invoked as `mobius [OPTIONS] COMMAND [ARGS]...`.
 
 ## Commands
 
+### `mobius init`
+
+Scaffold a new Mobius workspace.
+
+```text
+Usage: mobius init [OPTIONS] [TARGET]
+```
+
+Arguments and flags:
+
+- `TARGET` — workspace directory to initialize. Defaults to the current directory.
+- `--force` — overwrite an existing `spec.yaml` in the target directory.
+- `-h`, `--help` — print command help.
+
+Behaviour:
+
+- Writes a starter `spec.yaml` with placeholder `goal`, `constraints`, and
+  `success_criteria` keys that the seed validator accepts after editing.
+- Creates `MOBIUS_HOME` at `0700` and initializes the SQLite event store
+  with WAL on.
+- Idempotent: re-running on an already-initialized workspace exits `2` with
+  a stderr message unless `--force` is given.
+- Plain-text output on stdout: `workspace=<path>`, `spec=<path>`,
+  `event_store=<path>`, then a short next-steps block.
+
 ### `mobius interview`
 
 Run a deterministic project interview and render a project spec.
