@@ -40,13 +40,40 @@ success:
     return f
 
 
-def test_interview_handler_rejects_interactive(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], interview_command: ModuleType
+def test_interview_handler_interactive_mode_drives_prompts(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    interview_command: ModuleType,
 ) -> None:
-    with pytest.raises(typer.Exit) as exc:
-        interview_command.run(_ctx(tmp_path), non_interactive=False)
-    assert exc.value.exit_code == int(ExitCode.VALIDATION)
-    assert "interactive" in capsys.readouterr().err
+    """In interactive mode the handler reads answers from stdin, no fixture needed."""
+    import io as _io
+
+    answers = "\n".join(
+        [
+            "greenfield",  # project_type
+            "Test goal scripted via stdin",  # goal
+            "first constraint",  # constraints first
+            "",  # finish constraints
+            "first criterion",  # success first
+            "",  # finish success
+        ]
+    )
+    monkeypatch.setattr(sys, "stdin", _io.StringIO(answers + "\n"))
+    monkeypatch.chdir(tmp_path)
+    out = tmp_path / "out.yaml"
+    interview_command.run(
+        _ctx(tmp_path),
+        non_interactive=False,
+        input_path=None,
+        output_path=out,
+        template="blank",
+    )
+    captured = capsys.readouterr()
+    assert "session_id=interview_" in captured.out
+    assert out.exists()
+    spec_text = out.read_text(encoding="utf-8")
+    assert "Test goal scripted via stdin" in spec_text
 
 
 def test_interview_handler_requires_input(
@@ -58,19 +85,22 @@ def test_interview_handler_requires_input(
     assert "--input" in capsys.readouterr().err
 
 
-def test_interview_handler_requires_output(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str], interview_command: ModuleType
+def test_interview_handler_defaults_output_to_cwd_spec_yaml(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    interview_command: ModuleType,
 ) -> None:
+    """When --output is omitted, the spec is written to ./spec.yaml."""
     fixture = _fixture(tmp_path)
-    with pytest.raises(typer.Exit) as exc:
-        interview_command.run(
-            _ctx(tmp_path),
-            non_interactive=True,
-            input_path=fixture,
-            output_path=None,
-        )
-    assert exc.value.exit_code == int(ExitCode.USAGE)
-    assert "--output" in capsys.readouterr().err
+    monkeypatch.chdir(tmp_path)
+    interview_command.run(
+        _ctx(tmp_path),
+        non_interactive=True,
+        input_path=fixture,
+        output_path=None,
+    )
+    assert (tmp_path / "spec.yaml").exists()
 
 
 def test_interview_handler_validation_error_exits_3(

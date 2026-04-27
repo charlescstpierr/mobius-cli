@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import uuid
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from mobius.workflow.interview import (
     parse_fixture,
     question_answers,
     render_spec_yaml,
+    run_interactive_interview,
 )
 
 
@@ -31,6 +33,7 @@ class InterviewOutput(BaseModel):
     ambiguity_score: float
     ambiguity_gate: float
     passed_gate: bool
+    template: str = "blank"
 
 
 def run(
@@ -39,20 +42,34 @@ def run(
     non_interactive: bool = False,
     input_path: Path | None = None,
     output_path: Path | None = None,
+    template: str | None = None,
+    project_type: str = "greenfield",
 ) -> None:
-    """Run a deterministic non-interactive interview and write a project spec."""
-    if not non_interactive:
-        output.write_error_line("interactive interview requires an LLM and is not implemented yet")
-        raise typer.Exit(code=int(ExitCode.VALIDATION))
-    if input_path is None:
-        output.write_error_line("--input is required with --non-interactive")
-        raise typer.Exit(code=int(ExitCode.USAGE))
-    if output_path is None:
-        output.write_error_line("--output is required with --non-interactive")
-        raise typer.Exit(code=int(ExitCode.USAGE))
+    """Run an interview and write a project spec.
+
+    The command supports three modes:
+
+    1. Non-interactive (``--non-interactive --input <fixture>``): reads a
+       deterministic fixture file. Backward compatible.
+    2. Scripted/interactive: prompts on stderr, reads answers from stdin.
+       Auto-detects a template from the cwd unless ``--template`` is given.
+    3. Re-run from previous spec: not yet supported (out of scope).
+    """
+    workspace = Path.cwd()
+    output_path = output_path or workspace / "spec.yaml"
 
     try:
-        fixture = parse_fixture(input_path)
+        if non_interactive:
+            if input_path is None:
+                output.write_error_line("--input is required with --non-interactive")
+                raise typer.Exit(code=int(ExitCode.USAGE))
+            fixture = parse_fixture(input_path)
+        else:
+            fixture = run_interactive_interview(
+                workspace=workspace,
+                template_name=template,
+                project_type=project_type,
+            )
         score = compute_ambiguity_score(fixture)
         score.raise_for_gate()
     except (AmbiguityGateError, ValueError) as exc:
@@ -61,6 +78,7 @@ def run(
 
     session_id = f"interview_{uuid.uuid4().hex[:12]}"
     paths = get_paths(context.mobius_home)
+    output_path = output_path.expanduser().resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     spec_yaml = render_spec_yaml(session_id, fixture, score)
 
@@ -69,9 +87,10 @@ def run(
             session_id,
             runtime="interview",
             metadata={
-                "mode": "non-interactive",
-                "input": str(input_path),
+                "mode": "non-interactive" if non_interactive else "interactive",
+                "input": str(input_path) if input_path else "",
                 "output": str(output_path),
+                "template": fixture.template,
             },
             status="running",
         )
@@ -79,9 +98,10 @@ def run(
             session_id,
             "interview.started",
             {
-                "mode": "non-interactive",
-                "input": str(input_path),
+                "mode": "non-interactive" if non_interactive else "interactive",
+                "input": str(input_path) if input_path else "",
                 "project_type": fixture.project_type,
+                "template": fixture.template,
             },
         )
         for category, question, answer in question_answers(fixture):
@@ -103,6 +123,7 @@ def run(
                 "ambiguity_gate": score.threshold,
                 "passed_gate": score.passed,
                 "output": str(output_path),
+                "template": fixture.template,
             },
         )
         store.end_session(session_id, status="completed")
@@ -113,10 +134,15 @@ def run(
         ambiguity_score=score.score,
         ambiguity_gate=score.threshold,
         passed_gate=score.passed,
+        template=fixture.template,
     )
     if context.json_output:
         output.write_json(payload.model_dump_json())
         return
+    if not non_interactive:
+        sys.stderr.write(f"\n# Wrote {payload.output}\n")
+        sys.stderr.flush()
     output.write_line(f"session_id={payload.session_id}")
     output.write_line(f"output={payload.output}")
+    output.write_line(f"template={payload.template}")
     output.write_line(f"ambiguity_score={payload.ambiguity_score}")

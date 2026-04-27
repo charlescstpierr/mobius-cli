@@ -7,6 +7,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-04-27
+
+### Fixed
+
+- **Single `run.cancelled` event per cancel**: v0.1.3 sometimes wrote two
+  `run.cancelled` (or `evolution.cancelled`) events when both the worker
+  SIGTERM handler and the cancel command emitted one. The worker is now
+  the sole authority and writes the event idempotently; the cancel
+  command observes the event store and only synthesizes a fallback event
+  when the worker could not have flushed one (stale PID, missing PID
+  file, escalation to SIGKILL). (`fix(workflow/cancel)`)
+- **Clear error for unknown spec keys**: invalid top-level keys such as
+  `stages` or a typo like `goalss` now report
+  `unknown spec key: 'X'. Allowed top-level keys: …` instead of the
+  misleading "key X cannot contain both scalar and …" message.
+  (`fix(workflow/seed)`)
+
+### Added
+
+- **Spec model extensions**: top-level `steps:`, `matrix:`, `metadata:`,
+  and `template:` are now first-class spec keys with strict validation
+  (`steps[*].depends_on` references must resolve, matrix axes must have
+  values, metadata must be a string mapping). Mobius remains a state and
+  event tracker; the new keys let downstream runners discover what was
+  *intended* without changing Mobius' surface area. (`feat(workflow/seed)`)
+- **Project templates**: `mobius init --template <web|cli|lib|etl|mobile|docs|blank>`
+  scaffolds a ready-to-edit `spec.yaml`. Without `--template`, init
+  auto-detects from manifests in the current working directory
+  (`package.json` → `web`, `Cargo.toml` → `cli`, `pyproject.toml` →
+  `lib`, `pubspec.yaml` → `mobile`, `mkdocs.yml` → `docs`,
+  `dbt_project.yml` → `etl`). (`feat(cli/init)`)
+- **Interactive interview**: `mobius interview` (no flags) now drives the
+  user through goal/constraints/success criteria prompts on stderr,
+  pre-populated from the auto-detected template. `--template <name>`
+  pins the template; `--project-type` switches between greenfield and
+  brownfield (the latter adds a context prompt). The legacy
+  `--non-interactive --input` mode is unchanged. (`feat(cli/interview)`)
+- **`mobius runs ls`**: list runs (and optionally seed/evolution sessions
+  with `--all`) as a Markdown table or JSON envelope (`--json`). Filter
+  by runtime, status, or limit. (`feat(cli/runs)`)
+- **`docs/project-types.md`**: worked examples for each of the six
+  project types referenced by the multi-project UAT.
+
+### Changed
+
+- **Worker SIGTERM handler is idempotent**: the cancel-event write checks
+  the event store for an existing `<runtime>.cancelled` row before
+  appending a new one, so a second SIGTERM is a no-op.
+- **README repositioning**: clarifies that Mobius tracks state and events
+  for an external runner — it does not execute `steps`/`matrix` itself —
+  and documents the new spec model, templates, and `runs ls`.
+
 ## [0.1.3] - 2026-04-27
 
 ### Fixed

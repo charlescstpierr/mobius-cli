@@ -21,9 +21,7 @@ def test_build_assets_uses_packaged_skills_when_source_missing(
 ) -> None:
     """When SKILLS_SOURCE is missing, fall back to importlib.resources data."""
     monkeypatch.setattr(setup_command, "SKILLS_SOURCE", tmp_path / "missing-skills")
-    monkeypatch.setattr(
-        setup_command, "CLAUDE_COMMANDS_SOURCE", tmp_path / "missing-commands"
-    )
+    monkeypatch.setattr(setup_command, "CLAUDE_COMMANDS_SOURCE", tmp_path / "missing-commands")
 
     assets = setup_command._build_assets("claude", tmp_path / "out")
     targets = [str(a.target) for a in assets]
@@ -44,9 +42,7 @@ def test_build_assets_codex_uses_packaged_skills_only(
 ) -> None:
     """Codex/hermes runtimes must NOT install Claude command files."""
     monkeypatch.setattr(setup_command, "SKILLS_SOURCE", tmp_path / "missing-skills")
-    monkeypatch.setattr(
-        setup_command, "CLAUDE_COMMANDS_SOURCE", tmp_path / "missing-commands"
-    )
+    monkeypatch.setattr(setup_command, "CLAUDE_COMMANDS_SOURCE", tmp_path / "missing-commands")
 
     assets = setup_command._build_assets("codex", tmp_path / "out")
     targets = [str(a.target) for a in assets]
@@ -79,9 +75,7 @@ def test_install_summary_reports_written_and_unchanged_split(
 ) -> None:
     """The summary line must split planned writes from unchanged skips."""
     monkeypatch.setattr(setup_command, "SKILLS_SOURCE", tmp_path / "missing-skills")
-    monkeypatch.setattr(
-        setup_command, "CLAUDE_COMMANDS_SOURCE", tmp_path / "missing-commands"
-    )
+    monkeypatch.setattr(setup_command, "CLAUDE_COMMANDS_SOURCE", tmp_path / "missing-commands")
 
     out_root = tmp_path / "out"
     inventory = tmp_path / "inv.json"

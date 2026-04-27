@@ -82,6 +82,9 @@ def test_mark_stale_run_skips_when_pid_alive(tmp_path: Path) -> None:
 
 
 def test_run_interrupted_sigterm_marks_cancelled(tmp_path: Path) -> None:
+    """v0.1.4 contract: the worker is authoritative for ``run.cancelled``.
+    A second SIGTERM must not produce a duplicate event (idempotent).
+    """
     paths = get_paths(tmp_path / "h")
     run_paths = get_run_paths(paths, "run_x")
     run_paths.directory.mkdir(parents=True, exist_ok=True)
@@ -101,7 +104,9 @@ def test_run_interrupted_sigterm_marks_cancelled(tmp_path: Path) -> None:
             "SELECT status FROM sessions WHERE session_id = ?",
             ("run_x",),
         ).fetchone()
+        events = [event.type for event in store.read_events("run_x")]
     assert row["status"] == "cancelled"
+    assert events.count("run.cancelled") == 1
     assert not pid_file.exists()
 
 

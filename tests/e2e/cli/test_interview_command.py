@@ -88,13 +88,22 @@ context: Existing Mobius code already has Typer and an event store.
 
     assert [row[0] for row in rows] == [
         "interview.started",
-        "interview.question_answered",
-        "interview.question_answered",
-        "interview.question_answered",
-        "interview.question_answered",
+        "interview.question_answered",  # project_type
+        "interview.question_answered",  # template
+        "interview.question_answered",  # goal
+        "interview.question_answered",  # constraints
+        "interview.question_answered",  # success
+        "interview.question_answered",  # context (brownfield)
         "interview.completed",
     ]
-    assert [row[1] for row in rows[1:5]] == ["goal", "constraints", "success", "context"]
+    assert [row[1] for row in rows[1:7]] == [
+        "project_type",
+        "template",
+        "goal",
+        "constraints",
+        "success",
+        "context",
+    ]
 
 
 def test_interview_rejects_ambiguous_fixture_without_writing_spec(tmp_path: Path) -> None:

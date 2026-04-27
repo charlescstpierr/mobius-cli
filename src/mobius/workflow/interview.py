@@ -1,11 +1,36 @@
-"""Deterministic interview fixture parsing, scoring, and spec rendering."""
+"""Deterministic interview engine and spec rendering.
+
+The interview turns a set of structured questions and answers into a valid
+``spec.yaml``. It supports three input modes:
+
+1. **Interactive (TTY)** — prompts the user one question at a time on stderr
+   and reads answers from stdin. Uses the auto-detected or ``--template``
+   defaults so users can press Enter to accept the recommendation.
+2. **Scripted stdin** — same prompts, but answers come from a non-TTY stdin
+   (an ``expect`` script or shell here-doc), one answer per line. Empty
+   lines accept the default.
+3. **Non-interactive fixture** — ``--non-interactive --input fixture.yaml``
+   reads a deterministic answers file, no prompts emitted. Existing CI
+   behaviour is preserved.
+
+Mobius does not execute anything; the interview only writes a spec file.
+"""
 
 from __future__ import annotations
 
+import io
 import json
+import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
+
+from mobius.workflow.templates import (
+    TEMPLATE_NAMES,
+    ProjectTemplate,
+    detect_template,
+    get_template,
+)
 
 _GATE_THRESHOLD = 0.2
 _AMBIGUOUS_MARKERS = frozenset({"", "tbd", "todo", "unknown", "unclear", "n/a", "na", "?"})
@@ -20,6 +45,7 @@ class InterviewFixture:
     constraints: list[str]
     success: list[str]
     context: str
+    template: str = "blank"
 
     @property
     def is_brownfield(self) -> bool:
@@ -52,24 +78,106 @@ class AmbiguityGateError(ValueError):
 
 
 def parse_fixture(path: Path) -> InterviewFixture:
-    """Parse a deterministic fixture from JSON or a small YAML subset.
-
-    The mission fixture format intentionally stays dependency-free. Supported
-    YAML is a top-level mapping whose values are scalars or ``-`` item lists.
-    JSON object fixtures with the same keys are also accepted.
-    """
+    """Parse a deterministic fixture from JSON or a small YAML subset."""
     raw = path.read_text(encoding="utf-8")
     values = _parse_mapping(raw)
     project_type = str(values.get("project_type", "greenfield")).strip().lower()
     if project_type not in {"greenfield", "brownfield"}:
         msg = "project_type must be either 'greenfield' or 'brownfield'"
         raise ValueError(msg)
+    template = str(values.get("template", "blank")).strip().lower() or "blank"
+    if template not in TEMPLATE_NAMES:
+        template = "blank"
     return InterviewFixture(
         project_type=project_type,
         goal=_as_text(values.get("goal")),
         constraints=_as_text_list(values.get("constraints")),
         success=_as_text_list(values.get("success")),
         context=_as_text(values.get("context")),
+        template=template,
+    )
+
+
+def fixture_from_template(
+    template: ProjectTemplate, *, project_type: str = "greenfield"
+) -> InterviewFixture:
+    """Build a fixture pre-populated from a template (used as defaults)."""
+    return InterviewFixture(
+        project_type=project_type,
+        goal=template.goal,
+        constraints=list(template.constraints),
+        success=list(template.success_criteria),
+        context="",
+        template=template.name,
+    )
+
+
+def run_interactive_interview(
+    *,
+    workspace: Path,
+    template_name: str | None = None,
+    project_type: str = "greenfield",
+    stdin: IO[str] | None = None,
+    stderr: IO[str] | None = None,
+) -> InterviewFixture:
+    """Drive the user through the interview and return a fixture.
+
+    Prompts go to ``stderr`` (so stdout stays clean); answers come from
+    ``stdin``. Empty answers accept the default. The function works the
+    same for TTY and scripted stdin — when stdin reaches EOF before all
+    questions are answered, remaining defaults are used.
+    """
+    in_stream = stdin if stdin is not None else sys.stdin
+    err = stderr if stderr is not None else sys.stderr
+
+    if template_name is None:
+        template_name = detect_template(workspace)
+    template = get_template(template_name)
+    defaults = fixture_from_template(template, project_type=project_type)
+
+    err.write(f"# Mobius interview — template: {template.name}\n")
+    err.write(f"# {template.description}\n")
+    err.write("# Press Enter to accept the [default] in brackets.\n\n")
+    err.flush()
+
+    project_type_answer = _prompt_choice(
+        err,
+        in_stream,
+        "Project type [greenfield/brownfield]",
+        default=defaults.project_type,
+        choices=("greenfield", "brownfield"),
+    )
+    goal_answer = _prompt_scalar(
+        err, in_stream, "Goal — what should this project ship?", default=defaults.goal
+    )
+    constraints_answer = _prompt_list(
+        err,
+        in_stream,
+        "Constraints (one per line, blank line to finish)",
+        defaults=defaults.constraints,
+    )
+    success_answer = _prompt_list(
+        err,
+        in_stream,
+        "Success criteria (one per line, blank line to finish)",
+        defaults=defaults.success,
+    )
+    context_answer = ""
+    if project_type_answer == "brownfield":
+        context_answer = _prompt_scalar(
+            err,
+            in_stream,
+            "Existing context to preserve",
+            default=defaults.context or "Existing system in place; preserve current behavior.",
+        )
+
+    return InterviewFixture(
+        project_type=project_type_answer,
+        goal=goal_answer,
+        constraints=constraints_answer,
+        success=success_answer,
+        context=context_answer,
+        template=template.name,
     )
 
 
@@ -102,6 +210,7 @@ def render_spec_yaml(session_id: str, fixture: InterviewFixture, score: Ambiguit
     lines = [
         f"session_id: {_yaml_scalar(session_id)}",
         f"project_type: {_yaml_scalar(fixture.project_type)}",
+        f"template: {_yaml_scalar(fixture.template)}",
         f"ambiguity_score: {score.score}",
         f"ambiguity_gate: {score.threshold}",
         "ambiguity_components:",
@@ -125,12 +234,75 @@ def render_spec_yaml(session_id: str, fixture: InterviewFixture, score: Ambiguit
 def question_answers(fixture: InterviewFixture) -> list[tuple[str, str, str | list[str]]]:
     """Return deterministic question/answer triples for persistence events."""
     answers: list[tuple[str, str, str | list[str]]] = [
+        ("project_type", "What kind of project is this?", fixture.project_type),
+        ("template", "Which template best fits this project?", fixture.template),
         ("goal", "What goal should this project accomplish?", fixture.goal),
         ("constraints", "What constraints must the solution respect?", fixture.constraints),
         ("success", "What outcomes prove success?", fixture.success),
     ]
     if fixture.is_brownfield:
         answers.append(("context", "What existing context must be preserved?", fixture.context))
+    return answers
+
+
+def _prompt_scalar(err: IO[str], in_stream: IO[str], question: str, *, default: str) -> str:
+    err.write(f"{question}\n  [default: {default!r}]\n> ")
+    err.flush()
+    line = in_stream.readline()
+    if line == "":
+        return default
+    answer = line.rstrip("\n").strip()
+    return answer if answer else default
+
+
+def _prompt_choice(
+    err: IO[str],
+    in_stream: IO[str],
+    question: str,
+    *,
+    default: str,
+    choices: tuple[str, ...],
+) -> str:
+    while True:
+        err.write(f"{question}\n  [default: {default}]\n> ")
+        err.flush()
+        line = in_stream.readline()
+        if line == "":
+            return default
+        answer = line.rstrip("\n").strip().lower() or default
+        if answer in choices:
+            return answer
+        err.write(f"  not a valid choice ({', '.join(choices)}); try again.\n")
+
+
+def _prompt_list(
+    err: IO[str], in_stream: IO[str], question: str, *, defaults: list[str]
+) -> list[str]:
+    err.write(f"{question}\n")
+    if defaults:
+        err.write("  defaults (Enter on first prompt to accept all):\n")
+        for default in defaults:
+            err.write(f"    - {default}\n")
+    err.write("> ")
+    err.flush()
+    first_line = in_stream.readline()
+    if first_line == "":
+        return list(defaults)
+    first = first_line.rstrip("\n").strip()
+    if first == "":
+        return list(defaults)
+
+    answers = [first]
+    while True:
+        err.write("> ")
+        err.flush()
+        line = in_stream.readline()
+        if line == "":
+            break
+        item = line.rstrip("\n").strip()
+        if item == "":
+            break
+        answers.append(item)
     return answers
 
 
@@ -232,3 +404,7 @@ def _yaml_list(values: list[str]) -> list[str]:
     if not values:
         return ["  []"]
     return [f"  - {_yaml_scalar(value)}" for value in values]
+
+
+# Re-export for test convenience.
+StringIO = io.StringIO

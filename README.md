@@ -17,6 +17,16 @@ Mobius is a from-scratch Python CLI rewrite inspired by
 seed, execution, QA, and evolution workflow ideas, but exposes them as fast
 one-shot shell commands instead of a long-running MCP server.
 
+> **What Mobius IS** — a fast, MCP-free **acceptance-criteria event tracker**
+> with first-class lineage, replay, and per-project state isolation. You
+> describe a project in `spec.yaml`; Mobius records every change as an event
+> and gives you a queryable history.
+>
+> **What Mobius IS NOT** — a build runner, task scheduler, or pipeline
+> executor. It does **not** execute the commands you describe. Bring your
+> own runner (Make, npm, cargo, dbt, fastlane, your CI, your agent). Mobius
+> tracks the *what* and the *whether*; you bring the *how*.
+
 ## Install
 
 Pick whichever installer you already use:
@@ -91,17 +101,44 @@ mobius status
 
 Common workflows:
 
-- `mobius init [PATH]` — scaffold a workspace with a starter `spec.yaml`
-- `mobius interview --non-interactive --input fixture.yaml --output spec.yaml`
+- `mobius init [PATH] [--template web|cli|lib|etl|mobile|docs|blank]` —
+  scaffold a workspace with a starter `spec.yaml`. Without `--template`,
+  Mobius auto-detects the project type from the cwd
+  (`package.json`→web, `Cargo.toml`→cli, `pyproject.toml`→lib,
+  `mkdocs.yml`→docs, `pubspec.yaml`→mobile, else `blank`).
+- `mobius interview` (interactive prompt-based, auto-detects template) or
+  `mobius interview --non-interactive --input fixture.yaml`
 - `mobius seed spec.yaml --json`
 - `mobius run --spec spec.yaml` (detached by default)
+- `mobius runs ls` — list runs in the event store
 - `mobius status <run_id> --follow`
 - `mobius qa <run_id> --offline --json`
 - `mobius evolve --from <run_id> --generations 3`
 - `mobius setup --runtime claude --dry-run`
 
 See [`docs/cli-reference.md`](docs/cli-reference.md) for every command, flag,
-and exit code.
+and exit code, and [`docs/project-types.md`](docs/project-types.md) for
+worked examples per project type (web, CLI, library, ETL, mobile, docs).
+
+### Spec model
+
+`spec.yaml` accepts the following top-level keys (all optional except `goal`,
+`constraints`, `success_criteria`):
+
+| Key | Purpose |
+| --- | --- |
+| `project_type` | `greenfield` (new) or `brownfield` (existing). |
+| `goal` | One-line statement of what the project ships. **Required.** |
+| `constraints` | List of invariants the work must respect. **Required.** |
+| `success_criteria` (or `success`) | List of testable outcomes. **Required.** |
+| `context` | Free-text description of the existing system (brownfield only). |
+| `steps` | Ordered list of named work items, each with optional `command` and `depends_on`. Mobius does **not** execute `command`; it is recorded as metadata for agents/CI. |
+| `matrix` | Mapping of axis name → list of values, e.g. `platform: [ios, android]`. |
+| `metadata` | Free-form key/value descriptive metadata. |
+| `template` | Template name used to scaffold the spec. |
+
+Unknown keys are rejected with a clear `unknown spec key 'X'. Allowed
+top-level keys: …` message — no more cryptic YAML diagnostics.
 
 ## Development
 

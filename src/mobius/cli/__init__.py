@@ -80,6 +80,7 @@ Commands:
   lineage    Print an aggregate lineage tree or replay hash.
   setup      Install or remove Mobius agent integration assets.
   config     Show, get, and set Mobius configuration.
+  runs       List runs (and optionally evolutions) recorded in the event store.
 """
     )
 

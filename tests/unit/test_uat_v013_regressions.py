@@ -81,7 +81,8 @@ def test_interview_non_interactive_missing_input_exits_nonzero() -> None:
     assert "--input" in proc.stderr
 
 
-def test_interview_non_interactive_missing_output_exits_nonzero(tmp_path: Path) -> None:
+def test_interview_non_interactive_defaults_output_to_cwd_spec_yaml(tmp_path: Path) -> None:
+    """v0.1.4: --output is optional and defaults to ``./spec.yaml`` in cwd."""
     fixture = tmp_path / "f.yaml"
     fixture.write_text(
         "project_type: greenfield\n"
@@ -100,15 +101,14 @@ def test_interview_non_interactive_missing_output_exits_nonzero(tmp_path: Path) 
             "--input",
             str(fixture),
         ],
-        cwd=PROJECT_ROOT,
+        cwd=str(tmp_path),  # run from tmp_path so spec.yaml lands here
         capture_output=True,
         text=True,
         check=False,
         timeout=30,
     )
-    assert proc.returncode != 0
-    assert proc.stdout == ""
-    assert "--output" in proc.stderr
+    assert proc.returncode == 0, proc.stderr
+    assert (tmp_path / "spec.yaml").exists()
 
 
 # --------------------------------------------------------------------------- Bug #3

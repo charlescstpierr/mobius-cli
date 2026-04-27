@@ -182,7 +182,13 @@ class RunInterrupted:
         self.pid_file = pid_file
 
     def handle_sigterm(self, _signum: int, _frame: object | None) -> NoReturn:
-        """Handle graceful cancellation."""
+        """Handle graceful cancellation.
+
+        The worker is the authority on ``run.cancelled``: it emits the
+        event, updates the session status, and cleans up its PID file. The
+        cancel command observes this rather than emitting its own event,
+        which is how v0.1.4 avoids the duplicate-cancel bug from v0.1.3.
+        """
         self._finish("cancelled", "run.cancelled")
         raise SystemExit(int(ExitCode.OK))
 
@@ -194,8 +200,13 @@ class RunInterrupted:
 
     def _finish(self, status: str, event_type: str) -> None:
         with EventStore(self.paths.event_store) as store:
-            store.append_event(self.run_id, event_type, {"signal": status})
-            store.end_session(self.run_id, status=status)
+            # Idempotency: if the event has already been emitted (e.g. a
+            # second SIGTERM lands while the handler is running), do not
+            # append a duplicate.
+            existing = [event.type for event in store.read_events(self.run_id)]
+            if event_type not in existing:
+                store.append_event(self.run_id, event_type, {"signal": status})
+                store.end_session(self.run_id, status=status)
         _cleanup_pid(self.pid_file)
 
 

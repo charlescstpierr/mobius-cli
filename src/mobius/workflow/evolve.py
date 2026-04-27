@@ -220,7 +220,12 @@ class EvolutionInterrupted:
         self.pid_file = pid_file
 
     def handle_sigterm(self, _signum: int, _frame: object | None) -> NoReturn:
-        """Handle graceful cancellation."""
+        """Handle graceful cancellation.
+
+        The worker emits the ``evolution.cancelled`` event idempotently;
+        the cancel command observes the worker rather than emitting its
+        own event.
+        """
         self._finish("cancelled", "evolution.cancelled")
         raise SystemExit(int(ExitCode.OK))
 
@@ -232,8 +237,10 @@ class EvolutionInterrupted:
 
     def _finish(self, status: str, event_type: str) -> None:
         with EventStore(self.paths.event_store) as store:
-            store.append_event(self.evolution_id, event_type, {"signal": status})
-            store.end_session(self.evolution_id, status=status)
+            existing = [event.type for event in store.read_events(self.evolution_id)]
+            if event_type not in existing:
+                store.append_event(self.evolution_id, event_type, {"signal": status})
+                store.end_session(self.evolution_id, status=status)
         _cleanup_pid(self.pid_file)
 
 

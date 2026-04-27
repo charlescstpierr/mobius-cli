@@ -131,10 +131,18 @@ def init_command(
             help="Overwrite an existing spec.yaml in the target directory.",
         ),
     ] = False,
+    template: Annotated[
+        str | None,
+        typer.Option(
+            "--template",
+            help="Project template: web, cli, lib, etl, mobile, docs, blank. "
+            "Auto-detected from the cwd when omitted.",
+        ),
+    ] = None,
 ) -> None:
     """Create a starter spec.yaml and initialize the Mobius event store."""
     module = importlib.import_module("mobius.cli.commands.init")
-    cast(Any, module).run(ctx.obj, target, force=force)
+    cast(Any, module).run(ctx.obj, target, force=force, template=template)
 
 
 @app.command(name="setup", help="Install or remove Mobius agent integration assets.")
@@ -425,7 +433,7 @@ def interview_command(
         bool,
         typer.Option(
             "--non-interactive",
-            help="Read deterministic answers from --input instead of prompting or using an LLM.",
+            help="Read deterministic answers from --input instead of prompting interactively.",
         ),
     ] = False,
     input_path: Annotated[
@@ -446,17 +454,35 @@ def interview_command(
             file_okay=True,
             dir_okay=False,
             writable=True,
-            help="Path where the generated spec YAML should be written.",
+            help="Path where the generated spec YAML should be written. "
+            "Defaults to ./spec.yaml in the cwd.",
         ),
     ] = None,
+    template: Annotated[
+        str | None,
+        typer.Option(
+            "--template",
+            help="Template hint: web, cli, lib, etl, mobile, docs, blank. "
+            "Auto-detected from the cwd when omitted.",
+        ),
+    ] = None,
+    project_type: Annotated[
+        str,
+        typer.Option(
+            "--project-type",
+            help="Project kind: greenfield (new) or brownfield (existing).",
+        ),
+    ] = "greenfield",
 ) -> None:
-    """Run the deterministic interview command."""
+    """Run the interview command (interactive by default; --non-interactive for fixtures)."""
     module = importlib.import_module("mobius.cli.commands.interview")
     cast(Any, module).run(
         ctx.obj,
         non_interactive=non_interactive,
         input_path=input_path,
         output_path=output_path,
+        template=template,
+        project_type=project_type,
     )
 
 
@@ -573,6 +599,60 @@ def config_set(
 
 
 app.add_typer(config_app, name="config")
+
+
+runs_app = typer.Typer(
+    add_completion=False,
+    context_settings={"help_option_names": ["-h", "--help"]},
+    help="List and inspect Mobius runs.",
+)
+
+
+@runs_app.command(name="ls")
+def runs_ls_command(
+    ctx: typer.Context,
+    limit: Annotated[
+        int,
+        typer.Option(
+            "--limit",
+            min=1,
+            help="Maximum number of rows to return (default: 20).",
+        ),
+    ] = 20,
+    show_all: Annotated[
+        bool,
+        typer.Option(
+            "--all",
+            help="Include sessions of all runtimes (interview, seed, run, evolution).",
+        ),
+    ] = False,
+    runtime: Annotated[
+        str | None,
+        typer.Option(
+            "--runtime",
+            help="Filter by runtime (run, evolution, seed, interview).",
+        ),
+    ] = None,
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Emit machine-readable JSON.",
+        ),
+    ] = False,
+) -> None:
+    """List runs (and optionally evolutions) recorded in the event store."""
+    module = importlib.import_module("mobius.cli.commands.runs")
+    cast(Any, module).ls(
+        ctx.obj,
+        limit=limit,
+        show_all=show_all,
+        runtime=runtime,
+        json_output=json_output,
+    )
+
+
+app.add_typer(runs_app, name="runs")
 
 
 worker_app = typer.Typer(
