@@ -134,14 +134,19 @@ def test_append_event_enforces_json_and_iso8601_utc_created_at(tmp_path: Path) -
         json_valid = store.connection.execute(
             "SELECT json_valid(payload) FROM events ORDER BY aggregate_id"
         ).fetchall()
+        created_at_values = store.connection.execute(
+            "SELECT created_at FROM events ORDER BY aggregate_id, sequence"
+        ).fetchall()
 
     assert event.sequence == 1
     assert json.loads(event.payload) == {"answer": 42}
     assert {row[0] for row in json_valid} == {1}
-    assert re.fullmatch(
-        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z",
-        event.created_at,
-    )
+    assert [row[0].endswith("Z") for row in created_at_values] == [True, True]
+    for row in created_at_values:
+        assert re.fullmatch(
+            r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z",
+            row[0],
+        )
 
 
 def test_unique_aggregate_sequence_makes_append_idempotent(tmp_path: Path) -> None:
@@ -179,7 +184,11 @@ def test_replay_hash_is_deterministic(tmp_path: Path) -> None:
         hash_one = store.replay_hash("agg-1")
         hash_two = store.replay_hash("agg-1")
 
-    assert hash_one == hash_two
+    with EventStore(db_path) as reopened_store:
+        hash_after_reopen = reopened_store.replay_hash("agg-1")
+
+    assert hash_one == hash_two == hash_after_reopen
+    assert re.fullmatch(r"[0-9a-f]{64}", hash_one)
     assert len(hash_one) == 64
 
 
