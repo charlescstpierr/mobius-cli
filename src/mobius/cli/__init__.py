@@ -22,12 +22,26 @@ _LATEST_SCHEMA_VERSION = 1
 def main() -> None:
     """Run Mobius, using lightweight fast paths before importing Typer/Rich."""
     argv = sys.argv[1:]
-    if _try_fast_path(argv):
-        return
+    try:
+        if _try_fast_path(argv):
+            return
 
-    from mobius.cli.main import main as typer_main
+        from mobius.cli.main import main as typer_main
 
-    typer_main()
+        typer_main()
+    except OSError as exc:
+        _exit_with_state_dir_error(exc)
+
+
+def _exit_with_state_dir_error(exc: OSError) -> NoReturn:
+    """Translate a state-directory I/O error into a friendly exit message."""
+    mobius_home = os.environ.get("MOBIUS_HOME") or str(Path.home() / ".mobius")
+    reason = exc.strerror or exc.__class__.__name__
+    sys.stderr.write(
+        f"cannot create Mobius state directory at {mobius_home}: {reason}\n"
+        "Set MOBIUS_HOME to a writable directory and try again.\n"
+    )
+    raise SystemExit(1) from exc
 
 
 def _try_fast_path(argv: list[str]) -> bool:
@@ -461,4 +475,11 @@ def _raise_fast_not_found(run_id: str) -> NoReturn:
     raise SystemExit(4)
 
 
-__all__ = ["main"]
+#: Stable reference to the package-level entry-point function. The plain
+#: ``main`` attribute can be shadowed by the lazily-loaded ``mobius.cli.main``
+#: submodule once any code imports it; tests and tooling can rely on
+#: ``mobius.cli.entry_point`` to always point at the function.
+entry_point = main
+
+
+__all__ = ["entry_point", "main"]

@@ -13,8 +13,8 @@ def _no_color() -> bool:
 
 
 def write_line(message: str) -> None:
-    """Write one data line to stdout."""
-    Console(file=sys.stdout, no_color=_no_color()).print(message)
+    """Write one data line to stdout without terminal-width wrapping."""
+    Console(file=sys.stdout, no_color=_no_color(), soft_wrap=True).print(message)
 
 
 def write_json(message: str) -> None:
