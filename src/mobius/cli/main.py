@@ -228,7 +228,7 @@ def status_command(
     ctx: typer.Context,
     run_id: Annotated[
         str | None,
-        typer.Argument(help="Optional run id to inspect once run tracking is implemented."),
+        typer.Argument(help="Optional run id to inspect."),
     ] = None,
     read_only: Annotated[
         bool,
@@ -244,10 +244,23 @@ def status_command(
             help="Emit machine-readable JSON.",
         ),
     ] = False,
+    follow: Annotated[
+        bool,
+        typer.Option(
+            "--follow",
+            help="Poll the event store every 200ms and stream run event deltas until terminal.",
+        ),
+    ] = False,
 ) -> None:
     """Open the event store and report a lightweight status snapshot."""
     module = importlib.import_module("mobius.cli.commands.status")
-    cast(Any, module).run(ctx.obj, run_id, read_only=read_only, json_output=json_output)
+    cast(Any, module).run(
+        ctx.obj,
+        run_id,
+        read_only=read_only,
+        json_output=json_output,
+        follow=follow,
+    )
 
 
 config_app = typer.Typer(
