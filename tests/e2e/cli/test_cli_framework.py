@@ -63,7 +63,7 @@ def test_version_prints_single_semver_line() -> None:
 
 
 def test_stub_commands_print_not_implemented_and_exit_cleanly() -> None:
-    for command in [command for command in COMMANDS if command != "config"]:
+    for command in [command for command in COMMANDS if command not in {"config", "status"}]:
         result = run_mobius(command)
 
         assert result.returncode == 0
@@ -91,7 +91,7 @@ def test_global_json_flag_is_accepted_before_subcommand() -> None:
     result = run_mobius("--json", "status")
 
     assert result.returncode == 0
-    assert result.stdout == "not implemented\n"
+    assert result.stdout.startswith('{"event_store":')
 
 
 def test_mobius_home_override_is_available_to_cli_context(tmp_path: Path) -> None:

@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict
 from mobius.cli import output
 from mobius.cli.main import CliContext, ExitCode
 from mobius.config import load_config, save_config
+from mobius.persistence.event_store import EventStore
 
 
 class ConfigShowOutput(BaseModel):
@@ -20,6 +21,7 @@ class ConfigShowOutput(BaseModel):
     config_file: str
     profile: str
     log_level: str
+    busy_timeout: int
     values: dict[str, str]
 
 
@@ -44,12 +46,15 @@ class ConfigGetOutput(BaseModel):
 def show(context: CliContext, *, json_output: bool = False) -> None:
     """Show resolved paths and persisted configuration."""
     loaded = load_config(context.mobius_home)
+    with EventStore(loaded.paths.event_store) as store:
+        busy_timeout = store.connection.execute("PRAGMA busy_timeout").fetchone()
     payload = ConfigShowOutput(
         state_dir=str(loaded.paths.state_dir),
         event_store=str(loaded.paths.event_store),
         config_file=str(loaded.paths.config_file),
         profile=loaded.config.profile,
         log_level=loaded.config.log_level,
+        busy_timeout=int(busy_timeout[0]),
         values=loaded.config.to_mapping(),
     )
     if context.json_output or json_output:
@@ -59,6 +64,7 @@ def show(context: CliContext, *, json_output: bool = False) -> None:
     output.write_line(f"state_dir={payload.state_dir}")
     output.write_line(f"event_store={payload.event_store}")
     output.write_line(f"config_file={payload.config_file}")
+    output.write_line(f"busy_timeout={payload.busy_timeout}")
     for key, value in payload.values.items():
         output.write_line(f"{key}={value}")
 

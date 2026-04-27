@@ -48,7 +48,6 @@ COMMAND_MODULES: dict[str, str] = {
     "interview": "mobius.cli.commands.interview",
     "seed": "mobius.cli.commands.seed",
     "run": "mobius.cli.commands.run",
-    "status": "mobius.cli.commands.status",
     "ac-tree": "mobius.cli.commands.ac_tree",
     "qa": "mobius.cli.commands.qa",
     "cancel": "mobius.cli.commands.cancel",
@@ -124,6 +123,33 @@ for command_name, module_name in COMMAND_MODULES.items():
     app.command(name=command_name, help="Stub command; implementation pending.")(
         _make_lazy_command(module_name)
     )
+
+
+@app.command(name="status", help="Show Mobius event-store status.")
+def status_command(
+    ctx: typer.Context,
+    run_id: Annotated[
+        str | None,
+        typer.Argument(help="Optional run id to inspect once run tracking is implemented."),
+    ] = None,
+    read_only: Annotated[
+        bool,
+        typer.Option(
+            "--read-only",
+            help="Open the event store via SQLite mode=ro without writing WAL frames.",
+        ),
+    ] = False,
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Emit machine-readable JSON.",
+        ),
+    ] = False,
+) -> None:
+    """Open the event store and report a lightweight status snapshot."""
+    module = importlib.import_module("mobius.cli.commands.status")
+    cast(Any, module).run(ctx.obj, run_id, read_only=read_only, json_output=json_output)
 
 
 config_app = typer.Typer(

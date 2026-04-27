@@ -60,5 +60,5 @@ def test_handler_module_imports_only_when_subcommand_is_invoked() -> None:
     result = CliRunner().invoke(main.app, ["status"])
 
     assert result.exit_code == 0
-    assert "not implemented" in result.stdout
+    assert "event_store=" in result.stdout
     assert "mobius.cli.commands.status" in sys.modules

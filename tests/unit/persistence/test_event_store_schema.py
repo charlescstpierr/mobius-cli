@@ -102,16 +102,42 @@ def test_migrations_are_version_tracked_and_auto_reapplied(tmp_path: Path) -> No
     assert reapplied[0]["applied_at"].endswith("Z")
 
 
+def test_open_writes_idempotent_bootstrap_event_with_valid_json(tmp_path: Path) -> None:
+    db_path = tmp_path / "events.db"
+
+    with EventStore(db_path) as store:
+        rows = store.connection.execute(
+            """
+            SELECT aggregate_id, sequence, type, json_valid(payload) AS valid_payload
+            FROM events
+            WHERE aggregate_id = 'mobius.bootstrap'
+            """
+        ).fetchall()
+
+    with EventStore(db_path) as store:
+        bootstrap_count = store.connection.execute(
+            "SELECT count(*) FROM events WHERE aggregate_id = 'mobius.bootstrap'"
+        ).fetchone()
+
+    bootstrap_rows = [
+        (row["aggregate_id"], row["sequence"], row["type"], row["valid_payload"]) for row in rows
+    ]
+    assert bootstrap_rows == [("mobius.bootstrap", 1, "mobius.bootstrap", 1)]
+    assert bootstrap_count[0] == 1
+
+
 def test_append_event_enforces_json_and_iso8601_utc_created_at(tmp_path: Path) -> None:
     db_path = tmp_path / "events.db"
 
     with EventStore(db_path) as store:
         event = store.append_event("agg-1", "seed.created", {"answer": 42})
-        json_valid = store.connection.execute("SELECT json_valid(payload) FROM events").fetchone()
+        json_valid = store.connection.execute(
+            "SELECT json_valid(payload) FROM events ORDER BY aggregate_id"
+        ).fetchall()
 
     assert event.sequence == 1
     assert json.loads(event.payload) == {"answer": 42}
-    assert json_valid[0] == 1
+    assert {row[0] for row in json_valid} == {1}
     assert re.fullmatch(
         r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z",
         event.created_at,

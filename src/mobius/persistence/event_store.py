@@ -149,6 +149,7 @@ class EventStore:
         self._set_db_file_mode()
         self._configure_connection(connection, allow_journal_change=True)
         self._apply_migrations(connection)
+        self._ensure_bootstrap_event(connection)
         return connection
 
     def _prepare_filesystem(self) -> None:
@@ -196,6 +197,45 @@ class EventStore:
                     "INSERT OR REPLACE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
                     (migration.version, iso8601_utc_now()),
                 )
+
+    def _ensure_bootstrap_event(self, connection: sqlite3.Connection) -> None:
+        row = connection.execute(
+            "SELECT 1 FROM events WHERE aggregate_id = ? AND sequence = 1",
+            ("mobius.bootstrap",),
+        ).fetchone()
+        if row is not None:
+            return
+
+        created_at = iso8601_utc_now()
+        payload = _canonical_json({"schema_version": max(m.version for m in MIGRATIONS)})
+        with self._immediate_transaction(connection):
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO events(
+                    event_id, aggregate_id, sequence, type, payload, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "mobius-bootstrap-v1",
+                    "mobius.bootstrap",
+                    1,
+                    "mobius.bootstrap",
+                    payload,
+                    created_at,
+                ),
+            )
+            connection.execute(
+                """
+                INSERT INTO aggregates(aggregate_id, type, last_sequence, snapshot, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(aggregate_id) DO UPDATE SET
+                    type = excluded.type,
+                    last_sequence = MAX(aggregates.last_sequence, excluded.last_sequence),
+                    updated_at = excluded.updated_at
+                """,
+                ("mobius.bootstrap", "mobius.bootstrap", 1, "{}", created_at),
+            )
 
     def _assert_migrations_present(self, connection: sqlite3.Connection) -> None:
         connection.execute("SELECT version, applied_at FROM schema_migrations LIMIT 1").fetchall()

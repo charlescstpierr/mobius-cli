@@ -28,6 +28,7 @@ def test_config_show_auto_creates_state_dir_and_event_store_with_restricted_mode
     payload = json.loads(result.stdout)
     assert payload["state_dir"] == str(mobius_home)
     assert payload["event_store"] == str(mobius_home / "events.db")
+    assert payload["busy_timeout"] == 30_000
     assert (mobius_home.stat().st_mode & 0o777) == 0o700
     assert ((mobius_home / "events.db").stat().st_mode & 0o777) == 0o600
     assert result.stderr == ""
