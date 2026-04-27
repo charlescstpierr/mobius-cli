@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import time
+from contextlib import suppress
 from pathlib import Path
 from typing import NoReturn
 
@@ -12,7 +14,8 @@ from mobius.cli import output
 from mobius.cli.main import CliContext, ExitCode
 from mobius.config import MobiusPaths, get_paths
 from mobius.persistence.event_store import EventRecord, EventStore
-from mobius.workflow.run import get_run_paths, mark_stale_run_if_needed
+from mobius.workflow.evolve import get_evolution_paths
+from mobius.workflow.run import get_run_paths
 
 _FOLLOW_INTERVAL_SECONDS = 0.2
 _TERMINAL_STATES = frozenset({"completed", "failed", "crashed", "cancelled", "interrupted"})
@@ -59,7 +62,7 @@ def run(
         return
 
     if run_id is not None and not read_only:
-        mark_stale_run_if_needed(paths, run_id)
+        mark_stale_session_if_needed(paths, run_id)
 
     with EventStore(paths.event_store, read_only=read_only) as store:
         if run_id is not None:
@@ -109,7 +112,7 @@ def _follow_run(
 
     while True:
         if not read_only:
-            mark_stale_run_if_needed(paths, run_id)
+            mark_stale_session_if_needed(paths, run_id)
 
         with EventStore(event_store_path, read_only=read_only) as store:
             run_payload = _read_run_status(store, run_id)
@@ -207,7 +210,94 @@ def _format_event_delta(event: EventRecord) -> str:
 
 def _has_pending_run_files(paths: MobiusPaths, run_id: str) -> bool:
     run_paths = get_run_paths(paths, run_id)
-    return run_paths.metadata_file.exists() or run_paths.pid_file.exists()
+    evolution_paths = get_evolution_paths(paths, run_id)
+    return (
+        run_paths.metadata_file.exists()
+        or run_paths.pid_file.exists()
+        or evolution_paths.metadata_file.exists()
+        or evolution_paths.pid_file.exists()
+    )
+
+
+def mark_stale_session_if_needed(paths: MobiusPaths, session_id: str) -> None:
+    """Mark any detached run/evolution crashed when its PID file is stale."""
+    session = _read_session(paths, session_id)
+    runtime = session[0] if session is not None else _runtime_from_pending_files(paths, session_id)
+    if runtime is None:
+        return
+    pid_file = _pid_file_for_runtime(paths, session_id, runtime)
+    if not pid_file.exists():
+        return
+    if session is not None and session[1] in _TERMINAL_STATES:
+        _cleanup_pid_file(pid_file)
+        return
+    pid = _read_pid(pid_file)
+    if pid is not None and _pid_is_live(pid):
+        return
+    _cleanup_pid_file(pid_file)
+    with EventStore(paths.event_store) as store:
+        store.create_session(
+            session_id,
+            runtime=runtime,
+            metadata={"reason": "stale pid file", "pid": pid},
+            status="running",
+        )
+        store.append_event(
+            session_id,
+            f"{runtime}.crashed",
+            {"reason": "stale pid file", "pid": pid},
+        )
+        store.end_session(session_id, status="crashed")
+
+
+def _read_session(paths: MobiusPaths, session_id: str) -> tuple[str, str] | None:
+    if not paths.event_store.exists():
+        return None
+    with EventStore(paths.event_store) as store:
+        row = store.connection.execute(
+            "SELECT runtime, status FROM sessions WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    return str(row["runtime"]), str(row["status"])
+
+
+def _runtime_from_pending_files(paths: MobiusPaths, session_id: str) -> str | None:
+    if get_evolution_paths(paths, session_id).pid_file.exists():
+        return "evolution"
+    if get_run_paths(paths, session_id).pid_file.exists():
+        return "run"
+    return None
+
+
+def _pid_file_for_runtime(paths: MobiusPaths, session_id: str, runtime: str) -> Path:
+    if runtime == "evolution":
+        return get_evolution_paths(paths, session_id).pid_file
+    return get_run_paths(paths, session_id).pid_file
+
+
+def _read_pid(pid_file: Path) -> int | None:
+    try:
+        pid = int(pid_file.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+    return pid if pid > 0 else None
+
+
+def _cleanup_pid_file(pid_file: Path) -> None:
+    with suppress(FileNotFoundError):
+        pid_file.unlink()
+
+
+def _pid_is_live(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
 
 def _raise_not_found(run_id: str) -> NoReturn:
