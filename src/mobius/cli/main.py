@@ -45,7 +45,6 @@ class CommandModule(Protocol):
 
 
 COMMAND_MODULES: dict[str, str] = {
-    "seed": "mobius.cli.commands.seed",
     "run": "mobius.cli.commands.run",
     "ac-tree": "mobius.cli.commands.ac_tree",
     "qa": "mobius.cli.commands.qa",
@@ -122,6 +121,26 @@ for command_name, module_name in COMMAND_MODULES.items():
     app.command(name=command_name, help="Stub command; implementation pending.")(
         _make_lazy_command(module_name)
     )
+
+
+@app.command(name="seed", help="Create a seed session from a project spec or interview session.")
+def seed_command(
+    ctx: typer.Context,
+    spec_or_session_id: Annotated[
+        str,
+        typer.Argument(help="Path to a project spec file, or an interview session id."),
+    ],
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Emit machine-readable JSON.",
+        ),
+    ] = False,
+) -> None:
+    """Validate a project spec and persist seed events."""
+    module = importlib.import_module("mobius.cli.commands.seed")
+    cast(Any, module).run(ctx.obj, spec_or_session_id, json_output=json_output)
 
 
 @app.command(name="interview", help="Run the project interview and produce a spec.")

@@ -24,4 +24,4 @@ def write_json(message: str) -> None:
 
 def write_error_line(message: str) -> None:
     """Write one diagnostic line to stderr."""
-    Console(file=sys.stderr, no_color=_no_color()).print(message)
+    sys.stderr.write(f"{message}\n")

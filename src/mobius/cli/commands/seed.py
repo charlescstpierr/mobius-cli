@@ -1,11 +1,116 @@
-"""Stub handler for the Mobius seed command."""
+"""Handler for the Mobius seed command."""
 
 from __future__ import annotations
 
+import uuid
+from pathlib import Path
+
+import typer
+from pydantic import BaseModel, ConfigDict
+
 from mobius.cli import output
-from mobius.cli.main import CliContext
+from mobius.cli.main import CliContext, ExitCode
+from mobius.config import get_paths
+from mobius.persistence.event_store import EventStore
+from mobius.workflow.seed import SeedSpecValidationError, load_seed_spec
 
 
-def run(_context: CliContext) -> None:
-    """Run the not-yet-implemented seed command."""
-    output.write_line("not implemented")
+class SeedOutput(BaseModel):
+    """Structured output for a completed seed."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    session_id: str
+    source: str
+    event_count: int
+
+
+def run(
+    context: CliContext,
+    spec_or_session_id: str,
+    *,
+    json_output: bool = False,
+) -> None:
+    """Validate a spec, persist seed events, and emit a seed session id."""
+    paths = get_paths(context.mobius_home)
+    try:
+        spec_path = _resolve_spec_path(paths.event_store, spec_or_session_id)
+        spec = load_seed_spec(spec_path)
+    except FileNotFoundError as exc:
+        output.write_error_line(str(exc))
+        raise typer.Exit(code=int(ExitCode.NOT_FOUND)) from exc
+    except SeedSpecValidationError as exc:
+        output.write_error_line(str(exc))
+        raise typer.Exit(code=int(ExitCode.VALIDATION)) from exc
+
+    session_id = f"seed_{uuid.uuid4().hex[:12]}"
+    event_count = 0
+    with EventStore(paths.event_store) as store:
+        store.create_session(
+            session_id,
+            runtime="seed",
+            metadata={
+                "source": spec_or_session_id,
+                "spec_path": str(spec_path),
+                "source_session_id": spec.source_session_id,
+            },
+            status="running",
+        )
+        store.append_event(
+            session_id,
+            "seed.started",
+            {
+                "source": spec_or_session_id,
+                "spec_path": str(spec_path),
+                "source_session_id": spec.source_session_id,
+            },
+        )
+        event_count += 1
+        store.append_event(
+            session_id,
+            "seed.validated",
+            {
+                "project_type": spec.project_type,
+                "constraint_count": len(spec.constraints),
+                "success_criteria_count": len(spec.success_criteria),
+            },
+        )
+        event_count += 1
+        store.append_event(session_id, "seed.completed", spec.to_event_payload())
+        event_count += 1
+        store.end_session(session_id, status="completed")
+
+    payload = SeedOutput(
+        session_id=session_id,
+        source=spec_or_session_id,
+        event_count=event_count,
+    )
+    if context.json_output or json_output:
+        output.write_json(payload.model_dump_json())
+        return
+    output.write_line(payload.session_id)
+
+
+def _resolve_spec_path(event_store_path: Path, spec_or_session_id: str) -> Path:
+    candidate = Path(spec_or_session_id).expanduser()
+    if candidate.exists():
+        return candidate
+
+    with EventStore(event_store_path) as store:
+        events = store.read_events(spec_or_session_id)
+    if not events:
+        msg = f"seed source not found: {spec_or_session_id}"
+        raise FileNotFoundError(msg)
+
+    for event in reversed(events):
+        if event.type == "interview.completed":
+            output_path = event.payload_data.get("output")
+            if isinstance(output_path, str) and output_path:
+                path = Path(output_path).expanduser()
+                if path.exists():
+                    return path
+                msg = f"interview spec file not found: {path}"
+                raise FileNotFoundError(msg)
+
+    msg = f"session does not contain an interview output spec: {spec_or_session_id}"
+    raise SeedSpecValidationError(msg)
