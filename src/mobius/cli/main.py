@@ -45,7 +45,6 @@ class CommandModule(Protocol):
 
 
 COMMAND_MODULES: dict[str, str] = {
-    "qa": "mobius.cli.commands.qa",
     "cancel": "mobius.cli.commands.cancel",
     "evolve": "mobius.cli.commands.evolve",
     "lineage": "mobius.cli.commands.lineage",
@@ -118,6 +117,38 @@ def _make_lazy_command(module_name: str) -> Callable[[typer.Context], None]:
 for command_name, module_name in COMMAND_MODULES.items():
     app.command(name=command_name, help="Stub command; implementation pending.")(
         _make_lazy_command(module_name)
+    )
+
+
+@app.command(name="qa", help="Run deterministic QA checks for a Mobius run.")
+def qa_command(
+    ctx: typer.Context,
+    run_id: Annotated[
+        str,
+        typer.Argument(help="Run id to judge."),
+    ],
+    offline: Annotated[
+        bool,
+        typer.Option(
+            "--offline",
+            help="Use deterministic local heuristics without any LLM or network calls.",
+        ),
+    ] = True,
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Emit machine-readable JSON with summary and results.",
+        ),
+    ] = False,
+) -> None:
+    """Evaluate a run with the offline QA judge."""
+    module = importlib.import_module("mobius.cli.commands.qa")
+    cast(Any, module).run(
+        ctx.obj,
+        run_id,
+        offline=offline,
+        json_output=json_output,
     )
 
 
