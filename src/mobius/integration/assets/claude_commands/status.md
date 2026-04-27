@@ -1,11 +1,14 @@
 ---
-description: Inspect or follow a Mobius session status.
+description: Show Mobius event-store status, optionally for a specific run id.
 ---
 
-# Status
+# /status
 
-Use the agent's Bash tool to execute `mobius status`. Preserve any user-provided arguments and append them after the subcommand using normal shell quoting.
+Use the `Bash` tool — **never** MCP. Mobius has no MCP server.
 
 ```text
-Bash('mobius status [args]')
+Bash('mobius status')                       # global summary
+Bash('mobius status <run_id>')
+Bash('mobius status <run_id> --follow')
+Bash('mobius status <run_id> --json')
 ```

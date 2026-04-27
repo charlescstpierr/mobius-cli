@@ -1,20 +1,24 @@
 ---
 name: status
-description: Inspect Mobius session status or follow live progress.
+description: Inspect Mobius event-store status, optionally for a specific run id.
 ---
 
 # Status
 
 ## When to use
 
-Use when the user asks for the current state of a run or evolution session.
+Use to show overall event-store health, or to follow a specific run.
 
 ## How to invoke
 
-Run `mobius status <session-id>` via the Bash tool. For example:
-
 ```text
-Bash('mobius status <session-id>')
+Bash('mobius status')                       # global summary
+Bash('mobius status <run_id>')              # one run snapshot
+Bash('mobius status <run_id> --follow')     # streams deltas every ~200ms
+Bash('mobius status <run_id> --json')       # machine-readable
 ```
 
-Preserve any user-provided arguments and pass them to `mobius status` using normal shell quoting.
+## Rules
+
+- Always use the `Bash` tool. Mobius has **no MCP server**.
+- p95 cold-start budget is < 300 ms; safe to call repeatedly.

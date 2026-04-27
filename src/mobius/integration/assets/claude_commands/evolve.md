@@ -1,11 +1,15 @@
 ---
-description: Run the Mobius evolutionary improvement loop.
+description: Run the Mobius evolution loop from a prior run.
 ---
 
-# Evolve
+# /evolve
 
-Use the agent's Bash tool to execute `mobius evolve`. Preserve any user-provided arguments and append them after the subcommand using normal shell quoting.
+Use the `Bash` tool — **never** MCP. Mobius has no MCP server.
 
 ```text
-Bash('mobius evolve [args]')
+Bash('mobius evolve --from <run_id>')
+Bash('mobius evolve --from <run_id> --generations 3')
+Bash('mobius evolve --from <run_id> --foreground')
 ```
+
+Detached by default. Hard-capped at 30 generations.

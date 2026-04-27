@@ -1,11 +1,14 @@
 ---
-description: Generate or persist a Mobius seed from a spec or session.
+description: Validate a spec.yaml and create a Mobius seed session.
 ---
 
-# Seed
+# /seed
 
-Use the agent's Bash tool to execute `mobius seed`. Preserve any user-provided arguments and append them after the subcommand using normal shell quoting.
+Use the `Bash` tool — **never** MCP. Mobius has no MCP server.
 
 ```text
-Bash('mobius seed [args]')
+Bash('mobius seed spec.yaml')
+Bash('mobius seed spec.yaml --json')
 ```
+
+Validation errors exit with code 3.

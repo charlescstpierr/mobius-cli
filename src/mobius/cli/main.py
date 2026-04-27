@@ -467,12 +467,49 @@ def interview_command(
         ),
     ] = None,
     project_type: Annotated[
-        str,
+        str | None,
         typer.Option(
             "--project-type",
-            help="Project kind: greenfield (new) or brownfield (existing).",
+            help="Project kind: greenfield (new) or brownfield (existing). "
+            "Defaults to greenfield when no fixture/template is supplied; "
+            "otherwise the fixture's value is honored.",
         ),
-    ] = "greenfield",
+    ] = None,
+    goal: Annotated[
+        str | None,
+        typer.Option(
+            "--goal",
+            help="Project goal (one sentence). Used with --non-interactive when --input "
+            "is omitted, or to override the fixture goal. Intended for coding agents that "
+            "have already extracted the goal from a conversation with the user.",
+        ),
+    ] = None,
+    constraint: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--constraint",
+            help="Add a constraint. Pass multiple times for multiple constraints. "
+            "Used with --non-interactive to override or supply constraints without a "
+            "fixture file.",
+        ),
+    ] = None,
+    success_criterion: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--success-criterion",
+            help="Add a success criterion. Pass multiple times for multiple criteria. "
+            "Used with --non-interactive to override or supply success criteria without a "
+            "fixture file.",
+        ),
+    ] = None,
+    context: Annotated[
+        str | None,
+        typer.Option(
+            "--context",
+            help="Existing-system context (brownfield projects). Ignored unless "
+            "--project-type=brownfield.",
+        ),
+    ] = None,
 ) -> None:
     """Run the interview command (interactive by default; --non-interactive for fixtures)."""
     module = importlib.import_module("mobius.cli.commands.interview")
@@ -483,6 +520,10 @@ def interview_command(
         output_path=output_path,
         template=template,
         project_type=project_type,
+        goal=goal,
+        constraints=constraint,
+        success_criteria=success_criterion,
+        context_value=context,
     )
 
 

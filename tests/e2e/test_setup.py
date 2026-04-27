@@ -83,6 +83,31 @@ def test_setup_codex_and_hermes_populate_skills(tmp_path: Path) -> None:
             assert (tmp_path / f".{runtime}" / "skills" / skill_name / "SKILL.md").is_file()
 
 
+def test_setup_codex_writes_prompts_alongside_skills(tmp_path: Path) -> None:
+    """Codex discovers slash commands under ``~/.codex/prompts/<name>.md``."""
+    result = run_mobius("setup", "--runtime", "codex", home=tmp_path)
+
+    assert result.returncode == 0
+    for skill_name in REQUIRED_SKILLS:
+        prompt = tmp_path / ".codex" / "prompts" / f"{skill_name}.md"
+        assert prompt.is_file(), f"missing codex prompt for {skill_name}"
+        body = prompt.read_text(encoding="utf-8")
+        assert "Bash('" in body
+        assert "MCP" in body  # the prompt explicitly tells Codex not to use MCP
+    # Codex must NOT receive a Claude-style ``commands/`` directory.
+    assert not (tmp_path / ".codex" / "commands").exists()
+
+
+def test_setup_hermes_writes_commands_alongside_skills(tmp_path: Path) -> None:
+    """Hermes uses the Claude-style ``commands/`` layout."""
+    result = run_mobius("setup", "--runtime", "hermes", home=tmp_path)
+
+    assert result.returncode == 0
+    for skill_name in REQUIRED_SKILLS:
+        command = tmp_path / ".hermes" / "commands" / f"{skill_name}.md"
+        assert command.is_file(), f"missing hermes command for {skill_name}"
+
+
 def test_project_scope_installs_under_current_working_directory(tmp_path: Path) -> None:
     home = tmp_path / "home"
     project = tmp_path / "project"

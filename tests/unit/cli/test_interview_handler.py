@@ -150,3 +150,96 @@ def test_interview_handler_json_output(
     payload = json.loads(capsys.readouterr().out)
     assert payload["session_id"].startswith("interview_")
     assert payload["passed_gate"] is True
+
+
+def test_interview_handler_agent_flags_compose_spec(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    interview_command: ModuleType,
+) -> None:
+    """Coding-agent flags --goal/--constraint/--success-criterion compose a spec."""
+    monkeypatch.chdir(tmp_path)
+    out = tmp_path / "spec.yaml"
+    interview_command.run(
+        _ctx(tmp_path),
+        non_interactive=True,
+        input_path=None,
+        output_path=out,
+        template="web",
+        project_type="greenfield",
+        goal="Ship a Next.js dashboard with auth",
+        constraints=["Deploy to Vercel", "Use NextAuth.js"],
+        success_criteria=[
+            "Lighthouse >= 90 on the dashboard route",
+            "Auth flow works end-to-end",
+        ],
+    )
+    captured = capsys.readouterr()
+    assert "session_id=interview_" in captured.out
+    spec_text = out.read_text(encoding="utf-8")
+    assert "goal: Ship a Next.js dashboard with auth" in spec_text
+    assert "Deploy to Vercel" in spec_text
+    assert "Lighthouse >= 90 on the dashboard route" in spec_text
+    assert "template: web" in spec_text
+
+
+def test_interview_handler_agent_flags_override_fixture_values(
+    tmp_path: Path, interview_command: ModuleType
+) -> None:
+    """When both --input and CLI flags are supplied, the flags win."""
+    fixture = _fixture(tmp_path)
+    out = tmp_path / "spec.yaml"
+    interview_command.run(
+        _ctx(tmp_path),
+        non_interactive=True,
+        input_path=fixture,
+        output_path=out,
+        goal="OVERRIDDEN goal value with detail",
+        constraints=["new constraint with detail"],
+    )
+    spec_text = out.read_text(encoding="utf-8")
+    assert "OVERRIDDEN goal value with detail" in spec_text
+    # The success criteria from the fixture should still be preserved.
+    assert "Outcome one with detail" in spec_text
+
+
+def test_interview_handler_agent_flags_only_no_fixture(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    interview_command: ModuleType,
+) -> None:
+    """Pure flag-driven path (no --input, no template) requires at least --goal."""
+    monkeypatch.chdir(tmp_path)
+    out = tmp_path / "spec.yaml"
+    interview_command.run(
+        _ctx(tmp_path),
+        non_interactive=True,
+        input_path=None,
+        output_path=out,
+        goal="Build a tiny CLI with cargo",
+        constraints=["Single binary release artefact"],
+        success_criteria=["cargo test passes"],
+    )
+    spec_text = out.read_text(encoding="utf-8")
+    assert "goal: Build a tiny CLI with cargo" in spec_text
+
+
+def test_interview_handler_unknown_template_raises_validation(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    interview_command: ModuleType,
+) -> None:
+    with pytest.raises(typer.Exit) as exc:
+        interview_command.run(
+            _ctx(tmp_path),
+            non_interactive=True,
+            input_path=None,
+            output_path=tmp_path / "out.yaml",
+            template="bogus",
+            goal="A goal that is non-trivial",
+            constraints=["c1"],
+            success_criteria=["s1"],
+        )
+    assert exc.value.exit_code == int(ExitCode.VALIDATION)
+    assert "unknown template" in capsys.readouterr().err

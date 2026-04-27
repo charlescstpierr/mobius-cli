@@ -1,20 +1,24 @@
 ---
 name: qa
-description: Run the Mobius QA judge for a completed session.
+description: Run the offline Mobius QA judge for a completed run.
 ---
 
 # QA
 
 ## When to use
 
-Use when the user wants to verify a Mobius run against its acceptance criteria.
+Use after a run completes to evaluate it against its acceptance criteria.
 
 ## How to invoke
 
-Run `mobius qa <session-id>` via the Bash tool. For example:
-
 ```text
-Bash('mobius qa <session-id>')
+Bash('mobius qa <run_id>')              # offline by default
+Bash('mobius qa <run_id> --json')
 ```
 
-Preserve any user-provided arguments and pass them to `mobius qa` using normal shell quoting.
+`--offline` is the default and uses deterministic local heuristics — no LLM
+or network call.
+
+## Rules
+
+- Always use the `Bash` tool. Mobius has **no MCP server** and no LLM.

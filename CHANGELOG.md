@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-04-27
+
+### Added
+
+- **Agent-driven interview flags**: `mobius interview --non-interactive`
+  now accepts `--goal`, `--constraint` (repeatable), `--success-criterion`
+  (repeatable), `--context`, `--template`, and `--project-type` directly,
+  so coding agents (Claude Code, Codex, Hermes) can call Mobius after
+  holding the conversation themselves — no fixture file required. Flags
+  override fixture values when both `--input` and flags are supplied.
+  Mobius itself remains LLM-free; the agent does the talking.
+  (`feat(cli/interview)`)
+- **Codex prompts directory**: `mobius setup --runtime codex` now writes
+  matching slash-prompt files to `~/.codex/prompts/<name>.md` alongside
+  the existing `~/.codex/skills/<name>/SKILL.md`, matching Codex's native
+  discovery convention. Hermes and Claude continue to use
+  `~/.<runtime>/commands/<name>.md`. (`feat(cli/setup)`)
+- **Rich agent assets**: skills and slash commands ship concrete
+  `Bash('mobius …')` examples with project-type detection guidance, a
+  worked transcript, and an explicit "no MCP" reminder. The previous
+  ~270 byte stubs have been replaced with self-explanatory documents that
+  teach the agent *when*, *how*, and *what NOT to do*. (`feat(integration)`)
+- **`docs/agent-integration.md`**: per-runtime install map, asset table,
+  worked example transcripts (greenfield + brownfield), and the full
+  agent-flag reference. (`docs`)
+- **End-to-end agent simulation tests**: `tests/e2e/test_agent_workflow_simulation.py`
+  parametrizes a realistic transcript ("Next.js dashboard with auth,
+  Lighthouse 90+") across `claude`, `codex`, and `hermes` runtimes, and
+  also covers the brownfield path. (`test(e2e)`)
+- **`mobius interview --non-interactive` usage error refresh**: the message
+  now reads "non-interactive interview requires --input or
+  --goal/--template" so agents inspecting stderr discover the new flags.
+
+### Changed
+
+- **README**: clarifies that Mobius does not call an LLM and that the
+  coding agent drives the interview. New "Coding-agent integration"
+  section points at `docs/agent-integration.md`. Install snippet updated
+  to `mobius-0.1.5-py3-none-any.whl`.
+
 ## [0.1.4] - 2026-04-27
 
 ### Fixed
@@ -171,7 +211,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Agent integration assets (`skills/`, `.claude/commands/`, `hooks/`) and
   `mobius setup --runtime {claude,codex,hermes}` for idempotent installs.
 
-[Unreleased]: https://github.com/charlescstpierr/mobius-cli/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/charlescstpierr/mobius-cli/compare/v0.1.5...HEAD
+[0.1.5]: https://github.com/charlescstpierr/mobius-cli/releases/tag/v0.1.5
+[0.1.4]: https://github.com/charlescstpierr/mobius-cli/releases/tag/v0.1.4
 [0.1.3]: https://github.com/charlescstpierr/mobius-cli/releases/tag/v0.1.3
 [0.1.2]: https://github.com/charlescstpierr/mobius-cli/releases/tag/v0.1.2
 [0.1.1]: https://github.com/charlescstpierr/mobius-cli/releases/tag/v0.1.1

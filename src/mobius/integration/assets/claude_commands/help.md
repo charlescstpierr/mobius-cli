@@ -1,11 +1,17 @@
 ---
-description: Show Mobius CLI help and available subcommands.
+description: Show Mobius CLI help and explain how the agent should drive it.
 ---
 
-# Help
+# /help
 
-Use the agent's Bash tool to execute `mobius help`. Preserve any user-provided arguments and append them after the subcommand using normal shell quoting.
+Mobius is a fast, MCP-free CLI. Drive it via the `Bash` tool — **never**
+via MCP (Mobius has no MCP server).
 
 ```text
-Bash('mobius help [args]')
+Bash('mobius --help')        # equivalent to `mobius help`
+Bash('mobius <subcommand> --help')
 ```
+
+Use the `interview` skill / `/interview` command to start a project from
+a conversation; use `seed`, `run`, `status`, `runs ls`, `qa`, `cancel`,
+`evolve`, `lineage`, `ac-tree`, and `setup` from there.

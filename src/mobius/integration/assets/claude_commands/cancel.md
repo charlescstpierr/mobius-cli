@@ -1,11 +1,14 @@
 ---
-description: Cancel a Mobius run or evolution session.
+description: Cancel a detached Mobius run by run id.
 ---
 
-# Cancel
+# /cancel
 
-Use the agent's Bash tool to execute `mobius cancel`. Preserve any user-provided arguments and append them after the subcommand using normal shell quoting.
+Use the `Bash` tool — **never** MCP. Mobius has no MCP server.
 
 ```text
-Bash('mobius cancel [args]')
+Bash('mobius cancel <run_id>')
+Bash('mobius cancel <run_id> --grace-period 5')
 ```
+
+The worker SIGTERM handler is idempotent.

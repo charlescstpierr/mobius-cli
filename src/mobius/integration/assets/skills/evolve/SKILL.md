@@ -1,20 +1,24 @@
 ---
 name: evolve
-description: Run the Mobius evolutionary improvement loop from a prior session.
+description: Run the Mobius generation evolution loop from a prior run.
 ---
 
 # Evolve
 
 ## When to use
 
-Use when the user asks to refine or improve results from an existing run or seed.
+Use to refine results across generations starting from a completed run id.
 
 ## How to invoke
 
-Run `mobius evolve --from <session-id>` via the Bash tool. For example:
-
 ```text
-Bash('mobius evolve --from <session-id>')
+Bash('mobius evolve --from <run_id>')
+Bash('mobius evolve --from <run_id> --generations 3')
+Bash('mobius evolve --from <run_id> --foreground')
 ```
 
-Preserve any user-provided arguments and pass them to `mobius evolve` using normal shell quoting.
+Detached by default. Hard-capped at 30 generations.
+
+## Rules
+
+- Always use the `Bash` tool. Mobius has **no MCP server**.

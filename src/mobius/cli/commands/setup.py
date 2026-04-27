@@ -118,18 +118,30 @@ def _build_assets(runtime: str, root: Path) -> list[Asset]:
                 target = root / "skills" / skill_dir.name / "SKILL.md"
                 assets.append(Asset(_traversable_to_path(packaged_skill), target))
 
-    if runtime == "claude":
-        commands_dir = CLAUDE_COMMANDS_SOURCE if CLAUDE_COMMANDS_SOURCE.is_dir() else None
-        if commands_dir is not None:
-            for command_file in sorted(commands_dir.glob("*.md")):
-                assets.append(Asset(command_file, root / "commands" / command_file.name))
-        else:
-            bundled_commands = claude_commands_root()
-            for entry in sorted(_iter_packaged_files(bundled_commands), key=lambda t: t.name):
-                if entry.name.endswith(".md"):
-                    assets.append(
-                        Asset(_traversable_to_path(entry), root / "commands" / entry.name)
-                    )
+    # Each runtime gets the slash-command/prompt files in its conventional
+    # location:
+    #   - Claude Code  → ~/.claude/commands/<name>.md
+    #   - Codex        → ~/.codex/prompts/<name>.md
+    #   - Hermes       → ~/.hermes/commands/<name>.md
+    # We reuse the same Markdown bodies; the shipping directory differs only
+    # to match each agent's discovery convention.
+    prompt_subdir = {
+        "claude": "commands",
+        "codex": "prompts",
+        "hermes": "commands",
+    }[runtime]
+
+    commands_dir = CLAUDE_COMMANDS_SOURCE if CLAUDE_COMMANDS_SOURCE.is_dir() else None
+    if commands_dir is not None:
+        for command_file in sorted(commands_dir.glob("*.md")):
+            assets.append(Asset(command_file, root / prompt_subdir / command_file.name))
+    else:
+        bundled_commands = claude_commands_root()
+        for entry in sorted(_iter_packaged_files(bundled_commands), key=lambda t: t.name):
+            if entry.name.endswith(".md"):
+                assets.append(
+                    Asset(_traversable_to_path(entry), root / prompt_subdir / entry.name)
+                )
 
     return assets
 

@@ -1,11 +1,13 @@
 ---
-description: Display Mobius evolution lineage for a session.
+description: Render Mobius lineage or replay-hash for an aggregate.
 ---
 
-# Lineage
+# /lineage
 
-Use the agent's Bash tool to execute `mobius lineage`. Preserve any user-provided arguments and append them after the subcommand using normal shell quoting.
+Use the `Bash` tool — **never** MCP. Mobius has no MCP server.
 
 ```text
-Bash('mobius lineage [args]')
+Bash('mobius lineage <aggregate_id>')
+Bash('mobius lineage <aggregate_id> --json')
+Bash('mobius lineage <aggregate_id> --hash')
 ```

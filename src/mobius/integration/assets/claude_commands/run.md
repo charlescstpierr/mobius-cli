@@ -1,11 +1,15 @@
 ---
-description: Execute a Mobius seed or specification.
+description: Start a Mobius run for a validated spec.
 ---
 
-# Run
+# /run
 
-Use the agent's Bash tool to execute `mobius run`. Preserve any user-provided arguments and append them after the subcommand using normal shell quoting.
+Use the `Bash` tool — **never** MCP. Mobius has no MCP server. Mobius
+records events; it does not execute the spec's `steps` itself.
 
 ```text
-Bash('mobius run [args]')
+Bash('mobius run --spec spec.yaml')                # detached
+Bash('mobius run --spec spec.yaml --foreground')   # streams to stderr
 ```
+
+Stdout is the run id.

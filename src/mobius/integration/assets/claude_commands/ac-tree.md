@@ -1,11 +1,13 @@
 ---
-description: Display the Mobius acceptance-criteria tree for a session.
+description: Print a compact acceptance-criteria tree for a Mobius run.
 ---
 
-# Ac Tree
+# /ac-tree
 
-Use the agent's Bash tool to execute `mobius ac-tree`. Preserve any user-provided arguments and append them after the subcommand using normal shell quoting.
+Use the `Bash` tool — **never** MCP. Mobius has no MCP server.
 
 ```text
-Bash('mobius ac-tree [args]')
+Bash('mobius ac-tree <run_id>')
+Bash('mobius ac-tree <run_id> --json')
+Bash('mobius ac-tree <run_id> --max-nodes 100 --cursor 0')
 ```

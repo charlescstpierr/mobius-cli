@@ -1,11 +1,13 @@
 ---
-description: Run Mobius QA checks for a session.
+description: Run the offline Mobius QA judge for a completed run.
 ---
 
-# Qa
+# /qa
 
-Use the agent's Bash tool to execute `mobius qa`. Preserve any user-provided arguments and append them after the subcommand using normal shell quoting.
+Use the `Bash` tool — **never** MCP. Mobius has no MCP server. The QA
+judge is offline-first; no LLM call is made.
 
 ```text
-Bash('mobius qa [args]')
+Bash('mobius qa <run_id>')
+Bash('mobius qa <run_id> --json')
 ```

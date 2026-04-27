@@ -1,11 +1,19 @@
 ---
-description: Install or manage Mobius agent integration assets.
+description: Install or remove Mobius integration assets in this runtime.
 ---
 
-# Setup
+# /setup
 
-Use the agent's Bash tool to execute `mobius setup`. Preserve any user-provided arguments and append them after the subcommand using normal shell quoting.
+Use the `Bash` tool — **never** MCP. Mobius has no MCP server and never
+registers one in agent config.
 
 ```text
-Bash('mobius setup [args]')
+Bash('mobius setup --runtime claude --dry-run')
+Bash('mobius setup --runtime claude')
+Bash('mobius setup --runtime codex')
+Bash('mobius setup --runtime hermes')
+Bash('mobius setup --runtime claude --uninstall')
+Bash('mobius setup --runtime claude --scope project')
 ```
+
+Setup is idempotent.

@@ -22,10 +22,13 @@ one-shot shell commands instead of a long-running MCP server.
 > describe a project in `spec.yaml`; Mobius records every change as an event
 > and gives you a queryable history.
 >
-> **What Mobius IS NOT** — a build runner, task scheduler, or pipeline
-> executor. It does **not** execute the commands you describe. Bring your
-> own runner (Make, npm, cargo, dbt, fastlane, your CI, your agent). Mobius
-> tracks the *what* and the *whether*; you bring the *how*.
+> **What Mobius IS NOT** — a build runner, task scheduler, pipeline
+> executor, **or LLM**. It does **not** execute the commands you describe,
+> and it does **not** hold conversations with users. Your coding agent
+> (Claude Code, Codex, Hermes) drives the conversation; Mobius records the
+> resulting spec and tracks state. Bring your own runner (Make, npm,
+> cargo, dbt, fastlane, your CI, your agent). Mobius tracks the *what* and
+> the *whether*; you bring the *how*.
 
 ## Install
 
@@ -35,11 +38,11 @@ Pick whichever installer you already use:
   directly from GitHub:
 
   ```sh
-  pip install https://github.com/charlescstpierr/mobius-cli/releases/latest/download/mobius-0.1.3-py3-none-any.whl
+  pip install https://github.com/charlescstpierr/mobius-cli/releases/latest/download/mobius-0.1.5-py3-none-any.whl
   ```
 
   Replace the version in the URL with the [release](https://github.com/charlescstpierr/mobius-cli/releases)
-  you want, or download the wheel and run `pip install ./mobius-0.1.3-py3-none-any.whl`.
+  you want, or download the wheel and run `pip install ./mobius-0.1.5-py3-none-any.whl`.
 
 - **`uv`** — `uv tool install git+https://github.com/charlescstpierr/mobius-cli`
 - **`pipx`** — `pipx install git+https://github.com/charlescstpierr/mobius-cli`
@@ -139,6 +142,42 @@ worked examples per project type (web, CLI, library, ETL, mobile, docs).
 
 Unknown keys are rejected with a clear `unknown spec key 'X'. Allowed
 top-level keys: …` message — no more cryptic YAML diagnostics.
+
+## Coding-agent integration
+
+Mobius does **not** call an LLM. Your coding agent (Claude Code, Codex, or
+Hermes) holds the conversation with the user, then invokes Mobius via its
+`Bash` tool. One-time setup per agent:
+
+```bash
+mobius setup --runtime claude     # Claude Code
+mobius setup --runtime codex      # Codex (CLI / desktop)
+mobius setup --runtime hermes     # Hermes
+```
+
+Setup writes 11 long-form skills (`~/.<runtime>/skills/<name>/SKILL.md`)
+and 11 matching slash commands or prompts (Claude/Hermes:
+`~/.<runtime>/commands/<name>.md`; Codex: `~/.codex/prompts/<name>.md`)
+that teach the agent **when** to use Mobius, **how** to invoke it (with
+worked `Bash('mobius …')` examples), and **never** to use MCP — Mobius
+has no MCP runtime.
+
+Once installed, the user can simply say *"help me set up this project"*
+and the agent will hold an interview, then call:
+
+```bash
+mobius interview --non-interactive \
+  --template <web|cli|lib|etl|mobile|docs|blank> \
+  --project-type <greenfield|brownfield> \
+  --goal "<one sentence>" \
+  --constraint "<c1>" --constraint "<c2>" \
+  --success-criterion "<s1>" --success-criterion "<s2>" \
+  [--context "<existing-system context>"] \
+  --output spec.yaml
+```
+
+See [`docs/agent-integration.md`](docs/agent-integration.md) for the full
+worked example, asset locations, and brownfield/greenfield variants.
 
 ## Development
 

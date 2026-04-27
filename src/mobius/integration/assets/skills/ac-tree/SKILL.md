@@ -1,20 +1,22 @@
 ---
 name: ac-tree
-description: Display the Mobius acceptance-criteria tree for a session.
+description: Print a compact acceptance-criteria tree for a Mobius run.
 ---
 
 # AC Tree
 
 ## When to use
 
-Use when the user wants a compact view of acceptance criteria and progress.
+Use to render the acceptance-criteria hierarchy for a run.
 
 ## How to invoke
 
-Run `mobius ac-tree <session-id>` via the Bash tool. For example:
-
 ```text
-Bash('mobius ac-tree <session-id>')
+Bash('mobius ac-tree <run_id>')
+Bash('mobius ac-tree <run_id> --json')
+Bash('mobius ac-tree <run_id> --max-nodes 100 --cursor 0')
 ```
 
-Preserve any user-provided arguments and pass them to `mobius ac-tree` using normal shell quoting.
+## Rules
+
+- Always use the `Bash` tool. Mobius has **no MCP server**.

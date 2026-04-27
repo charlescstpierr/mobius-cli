@@ -1,20 +1,23 @@
 ---
 name: lineage
-description: Show Mobius lineage for a run or evolution session.
+description: Render lineage (ancestors / descendants / replay hash) for a Mobius aggregate.
 ---
 
 # Lineage
 
 ## When to use
 
-Use when the user wants to inspect ancestors and descendants of a session.
+Use to inspect how a run/evolution descends from earlier sessions, or to
+get the deterministic SHA-256 replay hash.
 
 ## How to invoke
 
-Run `mobius lineage <session-id>` via the Bash tool. For example:
-
 ```text
-Bash('mobius lineage <session-id>')
+Bash('mobius lineage <aggregate_id>')
+Bash('mobius lineage <aggregate_id> --json')
+Bash('mobius lineage <aggregate_id> --hash')
 ```
 
-Preserve any user-provided arguments and pass them to `mobius lineage` using normal shell quoting.
+## Rules
+
+- Always use the `Bash` tool. Mobius has **no MCP server**.
