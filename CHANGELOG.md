@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-04-27
+
+### Fixed
+
+- **Friendly error on bad `MOBIUS_HOME`**: a read-only or non-existent path
+  no longer surfaces a Python traceback. The CLI now prints a single-line
+  `cannot create Mobius state directory at <path>: <reason>` to stderr and
+  exits with code 1. (`fix(cli)`)
+- **`mobius config get` parity with `config show`**: derived paths
+  (`event_store`, `state_dir`, `config_file`) are now resolvable through
+  `config get`, matching what `config show` lists. (`fix(config)`)
+- **`mobius interview --non-interactive` exit codes**: missing `--input` /
+  `--output` already exited with code 2; pinned by regression tests so it
+  cannot regress. (`test(interview)`)
+
+### Changed
+
+- **`mobius setup` ships its assets inside the wheel.** Skill manifests and
+  Claude slash commands are now packaged under `mobius/integration/assets/`
+  and resolved via `importlib.resources`, so a `pip install <wheel-url>`
+  install installs the same content as a `uv tool install` source build.
+  The summary line now reports `installed N (M written, K unchanged)`. The
+  zero-asset fallback message points at the GitHub releases page. The
+  source-tree `skills/` and `.claude/commands/` directories are now
+  symlinks into the package data, eliminating duplication. (`feat(setup)`)
+- `output.write_line` uses `soft_wrap=True` so long file paths do not get
+  hard-wrapped on narrow terminals or non-tty pipes. (`fix(output)`)
+- `mobius.cli.entry_point` is exposed as a stable reference to the
+  package-level `main()` function, immune to submodule shadowing.
+
+### Documentation
+
+- README lists `pip install <wheel-url>` as the first install option.
+- README has a new "State directory" section explaining `MOBIUS_HOME`,
+  the `~/.mobius/events.db` default, and how to make event stores
+  per-project.
+- `mobius init` now prints the resolved `mobius_home` and a comment
+  explaining whether `MOBIUS_HOME` came from the environment or the
+  default, plus a one-line tip showing how to opt into per-project state.
+
 ## [0.1.2] - 2026-04-27
 
 ### Added
@@ -79,7 +119,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Agent integration assets (`skills/`, `.claude/commands/`, `hooks/`) and
   `mobius setup --runtime {claude,codex,hermes}` for idempotent installs.
 
-[Unreleased]: https://github.com/charlescstpierr/mobius-cli/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/charlescstpierr/mobius-cli/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/charlescstpierr/mobius-cli/releases/tag/v0.1.3
 [0.1.2]: https://github.com/charlescstpierr/mobius-cli/releases/tag/v0.1.2
 [0.1.1]: https://github.com/charlescstpierr/mobius-cli/releases/tag/v0.1.1
 [0.1.0]: https://github.com/charlescstpierr/mobius-cli/releases/tag/v0.1.0
