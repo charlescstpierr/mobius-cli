@@ -14,6 +14,7 @@ REQUIRED_SKILLS = {
     "ac-tree",
     "lineage",
 }
+REQUIRED_CLAUDE_COMMANDS = REQUIRED_SKILLS
 
 
 def parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
@@ -56,4 +57,31 @@ def test_agent_skill_bodies_invoke_mobius_via_bash_without_mcp_tools() -> None:
 
         assert "Bash('" in body
         assert "mobius " in body
+        assert all(token not in body for token in forbidden_tokens)
+
+
+def test_required_claude_slash_command_files_exist() -> None:
+    for command_name in REQUIRED_CLAUDE_COMMANDS:
+        assert (PROJECT_ROOT / ".claude" / "commands" / f"{command_name}.md").is_file()
+
+
+def test_claude_slash_command_frontmatter_has_description() -> None:
+    for command_name in REQUIRED_CLAUDE_COMMANDS:
+        frontmatter, _body = parse_frontmatter(
+            (PROJECT_ROOT / ".claude" / "commands" / f"{command_name}.md").read_text()
+        )
+
+        assert frontmatter["description"]
+
+
+def test_claude_slash_command_bodies_invoke_mobius_via_bash_without_mcp_tools() -> None:
+    forbidden_tokens = ("mcp__", "mcp.")
+
+    for command_name in REQUIRED_CLAUDE_COMMANDS:
+        _frontmatter, body = parse_frontmatter(
+            (PROJECT_ROOT / ".claude" / "commands" / f"{command_name}.md").read_text()
+        )
+
+        assert "Bash('" in body
+        assert f"mobius {command_name}" in body
         assert all(token not in body for token in forbidden_tokens)
