@@ -45,7 +45,6 @@ class CommandModule(Protocol):
 
 
 COMMAND_MODULES: dict[str, str] = {
-    "cancel": "mobius.cli.commands.cancel",
     "evolve": "mobius.cli.commands.evolve",
     "lineage": "mobius.cli.commands.lineage",
     "setup": "mobius.cli.commands.setup",
@@ -118,6 +117,27 @@ for command_name, module_name in COMMAND_MODULES.items():
     app.command(name=command_name, help="Stub command; implementation pending.")(
         _make_lazy_command(module_name)
     )
+
+
+@app.command(name="cancel", help="Cancel a detached Mobius run.")
+def cancel_command(
+    ctx: typer.Context,
+    run_id: Annotated[
+        str,
+        typer.Argument(help="Run id to cancel."),
+    ],
+    grace_period: Annotated[
+        float,
+        typer.Option(
+            "--grace-period",
+            min=0.0,
+            help="Seconds to wait after SIGTERM before escalating to SIGKILL.",
+        ),
+    ] = 10.0,
+) -> None:
+    """Send SIGTERM to a detached worker and clean up its PID file."""
+    module = importlib.import_module("mobius.cli.commands.cancel")
+    cast(Any, module).run(ctx.obj, run_id, grace_period=grace_period)
 
 
 @app.command(name="qa", help="Run deterministic QA checks for a Mobius run.")

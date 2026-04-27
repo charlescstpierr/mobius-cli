@@ -66,7 +66,8 @@ def test_stub_commands_print_not_implemented_and_exit_cleanly() -> None:
     for command in [
         command
         for command in COMMANDS
-        if command not in {"ac-tree", "config", "interview", "qa", "run", "seed", "status"}
+        if command
+        not in {"ac-tree", "cancel", "config", "interview", "qa", "run", "seed", "status"}
     ]:
         result = run_mobius(command)
 

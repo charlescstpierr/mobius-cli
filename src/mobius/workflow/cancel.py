@@ -1,0 +1,131 @@
+"""Cancellation helpers for detached Mobius runs."""
+
+from __future__ import annotations
+
+import os
+import signal
+import time
+from contextlib import suppress
+from enum import StrEnum
+from pathlib import Path
+
+from mobius.config import MobiusPaths
+from mobius.persistence.event_store import EventStore
+from mobius.workflow.run import get_run_paths
+
+_TERMINAL_STATES = frozenset({"completed", "failed", "crashed", "cancelled", "interrupted"})
+
+
+class CancelResult(StrEnum):
+    """Possible outcomes from a cancellation request."""
+
+    CANCELLED = "cancelled"
+    ALREADY_FINISHED = "already_finished"
+    NOT_FOUND = "not_found"
+
+
+def cancel_run(paths: MobiusPaths, run_id: str, *, grace_period: float = 10.0) -> CancelResult:
+    """Cancel a run by PID file, escalating from SIGTERM to SIGKILL if necessary."""
+    run_paths = get_run_paths(paths, run_id)
+    session_status = _read_session_status(paths, run_id)
+
+    if not run_paths.pid_file.exists():
+        if session_status in _TERMINAL_STATES:
+            return CancelResult.ALREADY_FINISHED
+        if session_status is None:
+            return CancelResult.NOT_FOUND
+        _mark_cancelled(paths, run_id, pid=None, escalated=False, reason="missing pid file")
+        return CancelResult.CANCELLED
+
+    pid = _read_pid(run_paths.pid_file)
+    if pid is None:
+        _cleanup_pid_file(run_paths.pid_file)
+        if session_status is None:
+            return CancelResult.NOT_FOUND
+        _mark_cancelled(paths, run_id, pid=None, escalated=False, reason="invalid pid file")
+        return CancelResult.CANCELLED
+
+    if not _pid_is_live(pid):
+        _cleanup_pid_file(run_paths.pid_file)
+        if session_status is None:
+            return CancelResult.NOT_FOUND
+        _mark_cancelled(paths, run_id, pid=pid, escalated=False, reason="stale pid file")
+        return CancelResult.CANCELLED
+
+    escalated = _terminate_process(pid, grace_period=grace_period)
+    _cleanup_pid_file(run_paths.pid_file)
+    _mark_cancelled(paths, run_id, pid=pid, escalated=escalated)
+    return CancelResult.CANCELLED
+
+
+def _terminate_process(pid: int, *, grace_period: float) -> bool:
+    os.kill(pid, signal.SIGTERM)
+    deadline = time.monotonic() + max(0.0, grace_period)
+    while time.monotonic() < deadline:
+        if not _pid_is_live(pid):
+            return False
+        time.sleep(0.05)
+    if _pid_is_live(pid):
+        os.kill(pid, signal.SIGKILL)
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if not _pid_is_live(pid):
+                return True
+            time.sleep(0.05)
+        return True
+    return False
+
+
+def _mark_cancelled(
+    paths: MobiusPaths,
+    run_id: str,
+    *,
+    pid: int | None,
+    escalated: bool,
+    reason: str = "cancel requested",
+) -> None:
+    with EventStore(paths.event_store) as store:
+        store.create_session(
+            run_id,
+            runtime="run",
+            metadata={"reason": reason},
+            status="running",
+        )
+        store.append_event(run_id, "run.cancelled", {"pid": pid, "escalated": escalated})
+        store.end_session(run_id, status="cancelled")
+
+
+def _read_session_status(paths: MobiusPaths, run_id: str) -> str | None:
+    if not paths.event_store.exists():
+        return None
+    with EventStore(paths.event_store) as store:
+        row = store._connection.execute(
+            "SELECT status FROM sessions WHERE session_id = ?",
+            (run_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    return str(row["status"])
+
+
+def _read_pid(pid_file: os.PathLike[str]) -> int | None:
+    try:
+        pid = int(Path(pid_file).read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+    return pid if pid > 0 else None
+
+
+def _cleanup_pid_file(pid_file: os.PathLike[str]) -> None:
+    with suppress(FileNotFoundError):
+        os.unlink(pid_file)
+
+
+def _pid_is_live(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
