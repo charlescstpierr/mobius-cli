@@ -51,9 +51,15 @@ strict = true
 files = ["src/mobius"]
 
 [tool.pytest.ini_options]
-addopts = "--cov=src/mobius --cov-report=term-missing --cov-fail-under=80"
+addopts = "--cov=src/mobius --cov-report=term-missing --cov-branch --cov-fail-under=95"
 testpaths = ["tests"]
 
 [tool.coverage.run]
 patch = ["subprocess"]
 source = ["src/mobius"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 95
+precision = 2
+show_missing = true
