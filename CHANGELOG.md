@@ -7,10 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-04-27
+
 ### Added
 
-- Placeholder for the next release. Add user-visible changes here as pull
-  requests land.
+- **Test coverage to 95.99%** (line) with branch coverage enabled. +221
+  tests across CLI handlers, workflow branches, and persistence edges.
+- **Chaos coverage**: SIGKILL fsync, disk-full, race-condition, and
+  failing-migration scenarios under `tests/chaos/`.
+- **Property-based testing**: Hypothesis test verifying replay
+  determinism over arbitrary event orderings.
+- **Cold-start regression guard** (`.github/workflows/perf-guard.yml` +
+  `bench/ci_perf_guard.py`): hard CI budgets on `mobius --help` and
+  `mobius status` p95 enforced on every push.
+- `CONTRIBUTING.md`, `SECURITY.md`, README status badges, and a
+  refreshed migration guide from upstream `Q00/ouroboros`.
+- `docs/benchmarks.md`: methodology, dev-box vs CI budget rationale, and
+  hyperfine recipes.
+
+### Changed
+
+- Coverage gate raised from 80% → 95% (line) with branch coverage on by
+  default in `pyproject.toml`.
 
 ## [0.1.1] - 2026-04-27
 
@@ -61,6 +79,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Agent integration assets (`skills/`, `.claude/commands/`, `hooks/`) and
   `mobius setup --runtime {claude,codex,hermes}` for idempotent installs.
 
-[Unreleased]: https://github.com/charlescstpierr/mobius-cli/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/charlescstpierr/mobius-cli/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/charlescstpierr/mobius-cli/releases/tag/v0.1.2
 [0.1.1]: https://github.com/charlescstpierr/mobius-cli/releases/tag/v0.1.1
 [0.1.0]: https://github.com/charlescstpierr/mobius-cli/releases/tag/v0.1.0
