@@ -45,7 +45,6 @@ class CommandModule(Protocol):
 
 
 COMMAND_MODULES: dict[str, str] = {
-    "interview": "mobius.cli.commands.interview",
     "seed": "mobius.cli.commands.seed",
     "run": "mobius.cli.commands.run",
     "ac-tree": "mobius.cli.commands.ac_tree",
@@ -122,6 +121,48 @@ def _make_lazy_command(module_name: str) -> Callable[[typer.Context], None]:
 for command_name, module_name in COMMAND_MODULES.items():
     app.command(name=command_name, help="Stub command; implementation pending.")(
         _make_lazy_command(module_name)
+    )
+
+
+@app.command(name="interview", help="Run the project interview and produce a spec.")
+def interview_command(
+    ctx: typer.Context,
+    non_interactive: Annotated[
+        bool,
+        typer.Option(
+            "--non-interactive",
+            help="Read deterministic answers from --input instead of prompting or using an LLM.",
+        ),
+    ] = False,
+    input_path: Annotated[
+        Path | None,
+        typer.Option(
+            "--input",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+            help="Fixture file containing deterministic interview answers.",
+        ),
+    ] = None,
+    output_path: Annotated[
+        Path | None,
+        typer.Option(
+            "--output",
+            file_okay=True,
+            dir_okay=False,
+            writable=True,
+            help="Path where the generated spec YAML should be written.",
+        ),
+    ] = None,
+) -> None:
+    """Run the deterministic interview command."""
+    module = importlib.import_module("mobius.cli.commands.interview")
+    cast(Any, module).run(
+        ctx.obj,
+        non_interactive=non_interactive,
+        input_path=input_path,
+        output_path=output_path,
     )
 
 
