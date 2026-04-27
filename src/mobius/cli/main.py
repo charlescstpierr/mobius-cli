@@ -45,7 +45,6 @@ class CommandModule(Protocol):
 
 
 COMMAND_MODULES: dict[str, str] = {
-    "lineage": "mobius.cli.commands.lineage",
     "setup": "mobius.cli.commands.setup",
 }
 
@@ -251,6 +250,46 @@ def evolve_command(
         generations=generations,
         detach=detach,
         foreground=foreground,
+    )
+
+
+@app.command(name="lineage", help="Print an aggregate lineage tree or replay hash.")
+def lineage_command(
+    ctx: typer.Context,
+    aggregate_id: Annotated[
+        str | None,
+        typer.Argument(help="Aggregate id to inspect."),
+    ] = None,
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Emit machine-readable JSON with ancestors[] and descendants[].",
+        ),
+    ] = False,
+    hash_output: Annotated[
+        bool,
+        typer.Option(
+            "--hash",
+            help="Print the deterministic SHA-256 replay hash for the aggregate.",
+        ),
+    ] = False,
+    aggregate: Annotated[
+        str | None,
+        typer.Option(
+            "--aggregate",
+            help="Aggregate id to hash or inspect; alias for the positional id.",
+        ),
+    ] = None,
+) -> None:
+    """Render lineage for a run/evolution aggregate."""
+    module = importlib.import_module("mobius.cli.commands.lineage")
+    cast(Any, module).run(
+        ctx.obj,
+        aggregate_id,
+        aggregate=aggregate,
+        json_output=json_output,
+        hash_output=hash_output,
     )
 
 
