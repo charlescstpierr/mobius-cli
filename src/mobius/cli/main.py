@@ -188,6 +188,22 @@ def setup_command(
     )
 
 
+@app.command(name="doctor", help="Run Mobius environment diagnostics.")
+def doctor_command(
+    ctx: typer.Context,
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Emit machine-readable JSON diagnostics.",
+        ),
+    ] = False,
+) -> None:
+    """Run environment diagnostics and emit one event per check."""
+    module = importlib.import_module("mobius.cli.commands.doctor")
+    cast(Any, module).run(ctx.obj, json_output=json_output)
+
+
 @app.command(name="cancel", help="Cancel a detached Mobius run.")
 def cancel_command(
     ctx: typer.Context,
