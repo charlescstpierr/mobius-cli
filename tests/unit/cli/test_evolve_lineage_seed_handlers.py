@@ -247,6 +247,7 @@ success_criteria:
     payload = json.loads(captured)
     assert payload["session_id"].startswith("seed_seed-handler-unit-test-goal_")
     assert payload["event_count"] == 3
+    assert payload["grade"] is None
 
 
 def test_seed_handler_emits_plain_id(
@@ -267,3 +268,42 @@ success_criteria:
     seed_command.run(_ctx(tmp_path), str(spec))
     out = capsys.readouterr().out.strip()
     assert out.startswith("seed_seed-handler-plain-id_")
+
+
+def test_seed_handler_validate_emits_bronze_grade_event(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], seed_command: ModuleType
+) -> None:
+    from mobius.persistence.event_store import EventStore
+
+    spec = tmp_path / "spec.yaml"
+    spec.write_text(
+        """
+project_type: greenfield
+goal: Seed handler bronze grade.
+constraints:
+  - C1
+success_criteria:
+  - S1
+""".strip(),
+        encoding="utf-8",
+    )
+
+    seed_command.run(_ctx(tmp_path), str(spec), json_output=True, validate=True)
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["event_count"] == 4
+    assert payload["grade"] == "bronze"
+    assert payload["criteria_met"] == 4
+    assert payload["criteria_total"] == 4
+
+    with EventStore(tmp_path / "home" / "events.db", read_only=True) as store:
+        grade_events = [
+            event
+            for event in store.read_events(payload["session_id"])
+            if event.type == "spec.grade_assigned"
+        ]
+    assert len(grade_events) == 1
+    grade_payload = grade_events[0].payload_data
+    assert grade_payload["grade"] == "bronze"
+    assert grade_payload["criteria_met"] == 4
+    assert grade_payload["criteria_total"] == 4

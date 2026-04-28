@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from mobius.workflow.seed import SeedSpecValidationError, load_seed_spec
+from mobius.workflow.seed import SeedSpecValidationError, assign_bronze_grade, load_seed_spec
 
 
 def test_load_seed_spec_accepts_interview_spec_yaml(tmp_path: Path) -> None:
@@ -122,6 +122,32 @@ agent_instructions: Keep changes scoped.
     assert spec.owner == "alice"
     assert spec.agent_instructions == "Keep changes scoped."
     assert spec.to_event_payload()["verification_commands"][0]["timeout_s"] == 60
+
+
+def test_grade_bronze_requires_minimal_static_criteria(tmp_path: Path) -> None:
+    spec_path = tmp_path / "spec.yaml"
+    spec_path.write_text(
+        """
+goal: Ship a validated seed spec.
+constraints:
+  - Keep grading static.
+success_criteria:
+  - Bronze grade is emitted.
+""".strip(),
+        encoding="utf-8",
+    )
+
+    grade = assign_bronze_grade(load_seed_spec(spec_path))
+
+    assert grade.grade == "bronze"
+    assert grade.criteria_met == 4
+    assert grade.criteria_total == 4
+    assert grade.details == {
+        "goal_present": True,
+        "constraints_present": True,
+        "success_criteria_present": True,
+        "yaml_parsed": True,
+    }
 
 
 def test_parser_rejects_unsupported_yaml(tmp_path: Path) -> None:

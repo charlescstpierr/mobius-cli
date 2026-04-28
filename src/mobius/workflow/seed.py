@@ -124,6 +124,41 @@ class SeedSpec:
         }
 
 
+@dataclass(frozen=True)
+class SpecGrade:
+    """Static completeness grade assigned to a parsed spec."""
+
+    grade: str
+    criteria_met: int
+    criteria_total: int
+    details: dict[str, bool]
+
+    def to_event_payload(self) -> dict[str, Any]:
+        """Return a JSON-compatible grade payload."""
+        return {
+            "grade": self.grade,
+            "criteria_met": self.criteria_met,
+            "criteria_total": self.criteria_total,
+            "details": dict(self.details),
+        }
+
+
+def assign_bronze_grade(spec: SeedSpec) -> SpecGrade:
+    """Assign the Bronze grade for the minimal static spec criteria."""
+    details = {
+        "goal_present": bool(spec.goal.strip()),
+        "constraints_present": len(spec.constraints) >= 1,
+        "success_criteria_present": len(spec.success_criteria) >= 1,
+        "yaml_parsed": True,
+    }
+    return SpecGrade(
+        grade="bronze",
+        criteria_met=sum(1 for passed in details.values() if passed),
+        criteria_total=len(details),
+        details=details,
+    )
+
+
 def load_seed_spec(path: Path) -> SeedSpec:
     """Load and validate a seed spec from JSON or the project YAML subset."""
     try:

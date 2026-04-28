@@ -472,10 +472,22 @@ def seed_command(
             help="Emit machine-readable JSON.",
         ),
     ] = False,
+    validate: Annotated[
+        bool,
+        typer.Option(
+            "--validate",
+            help="Assign the Bronze static completeness grade after validation.",
+        ),
+    ] = False,
 ) -> None:
     """Validate a project spec and persist seed events."""
     module = importlib.import_module("mobius.cli.commands.seed")
-    cast(Any, module).run(ctx.obj, spec_or_session_id, json_output=json_output)
+    cast(Any, module).run(
+        ctx.obj,
+        spec_or_session_id,
+        json_output=json_output,
+        validate=validate,
+    )
 
 
 @app.command(name="interview", help="Run the project interview and produce a spec.")

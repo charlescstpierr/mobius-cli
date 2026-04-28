@@ -12,7 +12,7 @@ from mobius.cli.main import CliContext, ExitCode
 from mobius.config import get_paths
 from mobius.persistence.event_store import EventStore
 from mobius.workflow.ids import readable_session_id
-from mobius.workflow.seed import SeedSpecValidationError, load_seed_spec
+from mobius.workflow.seed import SeedSpecValidationError, assign_bronze_grade, load_seed_spec
 
 
 class SeedOutput(BaseModel):
@@ -23,6 +23,9 @@ class SeedOutput(BaseModel):
     session_id: str
     source: str
     event_count: int
+    grade: str | None = None
+    criteria_met: int | None = None
+    criteria_total: int | None = None
 
 
 def run(
@@ -30,6 +33,7 @@ def run(
     spec_or_session_id: str,
     *,
     json_output: bool = False,
+    validate: bool = False,
 ) -> None:
     """Validate a spec, persist seed events, and emit a seed session id."""
     paths = get_paths(context.mobius_home)
@@ -78,12 +82,19 @@ def run(
         event_count += 1
         store.append_event(session_id, "seed.completed", spec.to_event_payload())
         event_count += 1
+        grade = assign_bronze_grade(spec) if validate else None
+        if grade is not None:
+            store.append_event(session_id, "spec.grade_assigned", grade.to_event_payload())
+            event_count += 1
         store.end_session(session_id, status="completed")
 
     payload = SeedOutput(
         session_id=session_id,
         source=spec_or_session_id,
         event_count=event_count,
+        grade=grade.grade if grade is not None else None,
+        criteria_met=grade.criteria_met if grade is not None else None,
+        criteria_total=grade.criteria_total if grade is not None else None,
     )
     if context.json_output or json_output:
         output.write_json(payload.model_dump_json())
