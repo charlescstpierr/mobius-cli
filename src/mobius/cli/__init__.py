@@ -238,6 +238,19 @@ def _try_fast_status(argv: list[str]) -> bool:
 
 
 def _fast_resolve_run_id(connection: sqlite3.Connection, run_id: str) -> str:
+    if run_id == "latest":
+        row = connection.execute(
+            """
+            SELECT aggregate_id
+            FROM events
+            WHERE type = 'run.started'
+            ORDER BY created_at DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        if row is None:
+            _raise_fast_not_found(run_id)
+        return str(row["aggregate_id"])
     row = connection.execute(
         "SELECT session_id FROM sessions WHERE session_id = ?",
         (run_id,),

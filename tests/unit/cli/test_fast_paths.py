@@ -101,6 +101,40 @@ def test_fast_status_returns_payload_for_known_run(
     assert payload["state"] == "completed"
 
 
+def test_fast_status_latest_returns_most_recent_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    with EventStore(home / "events.db") as store:
+        store.create_session("run_first", runtime="run", metadata={}, status="completed")
+        store.append_event("run_first", "run.started", {"goal": "First"})
+        store.create_session("run_second", runtime="run", metadata={}, status="completed")
+        store.append_event("run_second", "run.started", {"goal": "Second"})
+    _set_home(monkeypatch, home)
+
+    handled = cli_module._try_fast_status(["status", "latest", "--json"])
+
+    assert handled is True
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["run_id"] == "run_second"
+
+
+def test_fast_status_latest_without_runs_exits_4(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    with EventStore(home / "events.db"):
+        pass
+    _set_home(monkeypatch, home)
+
+    with pytest.raises(SystemExit) as exc:
+        cli_module._try_fast_status(["status", "latest"])
+
+    assert exc.value.code == 4
+
+
 def test_fast_status_markdown_path_returns_table(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

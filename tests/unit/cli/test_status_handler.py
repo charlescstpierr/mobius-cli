@@ -82,6 +82,52 @@ def test_status_handler_resolves_unique_run_slug_prefix(
     assert "# Run abc-def-123" in out
 
 
+def test_status_handler_latest_resolves_most_recent_run(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], status_command: ModuleType
+) -> None:
+    paths = get_paths(_ctx(tmp_path).mobius_home)
+    paths.state_dir.mkdir(parents=True, exist_ok=True)
+    with EventStore(paths.event_store) as store:
+        store.create_session("run_first", runtime="run", metadata={}, status="completed")
+        store.append_event("run_first", "run.started", {"goal": "First"})
+        store.create_session("run_second", runtime="run", metadata={}, status="completed")
+        store.append_event("run_second", "run.started", {"goal": "Second"})
+
+    status_command.run(_ctx(tmp_path), "latest")
+    out = capsys.readouterr().out
+    assert "# Run run_second" in out
+
+
+def test_status_handler_latest_without_runs_is_not_found(
+    tmp_path: Path, status_command: ModuleType
+) -> None:
+    paths = get_paths(_ctx(tmp_path).mobius_home)
+    paths.state_dir.mkdir(parents=True, exist_ok=True)
+    with EventStore(paths.event_store):
+        pass
+
+    with pytest.raises(SystemExit) as exc:
+        status_command.run(_ctx(tmp_path), "latest")
+
+    assert exc.value.code == int(ExitCode.NOT_FOUND)
+
+
+def test_status_handler_latest_read_only_resolves_most_recent_run(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], status_command: ModuleType
+) -> None:
+    paths = get_paths(_ctx(tmp_path).mobius_home)
+    paths.state_dir.mkdir(parents=True, exist_ok=True)
+    with EventStore(paths.event_store) as store:
+        store.create_session("run_first", runtime="run", metadata={}, status="completed")
+        store.append_event("run_first", "run.started", {"goal": "First"})
+        store.create_session("run_second", runtime="run", metadata={}, status="completed")
+        store.append_event("run_second", "run.started", {"goal": "Second"})
+
+    status_command.run(_ctx(tmp_path), "latest", read_only=True)
+    out = capsys.readouterr().out
+    assert "# Run run_second" in out
+
+
 def test_status_handler_rejects_ambiguous_run_slug_prefix(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], status_command: ModuleType
 ) -> None:

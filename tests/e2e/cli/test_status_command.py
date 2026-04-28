@@ -153,6 +153,36 @@ def test_status_run_slug_prefix_resolution_and_errors(tmp_path: Path) -> None:
     assert run_ids[1] in ambiguous.stderr
 
 
+def test_status_latest_resolves_most_recent_run(tmp_path: Path) -> None:
+    mobius_home = tmp_path / "mobius-home"
+    spec = tmp_path / "spec.yaml"
+    write_valid_spec(spec)
+
+    first = run_mobius("run", "--foreground", "--spec", str(spec), mobius_home=mobius_home)
+    assert first.returncode == 0
+    second = run_mobius("run", "--foreground", "--spec", str(spec), mobius_home=mobius_home)
+    assert second.returncode == 0
+
+    connection = sqlite3.connect(mobius_home / "events.db")
+    try:
+        run_ids = [
+            row[0]
+            for row in connection.execute(
+                "SELECT session_id FROM sessions WHERE runtime = 'run' ORDER BY started_at"
+            ).fetchall()
+        ]
+    finally:
+        connection.close()
+
+    assert len(run_ids) == 2
+    latest = run_mobius("status", "latest", mobius_home=mobius_home)
+
+    assert latest.returncode == 0
+    assert f"# Run {run_ids[1]}" in latest.stdout
+    assert f"# Run {run_ids[0]}" not in latest.stdout
+    assert latest.stderr == ""
+
+
 def test_status_follow_streams_deltas_until_terminal_state(tmp_path: Path) -> None:
     mobius_home = tmp_path / "mobius-home"
     spec = tmp_path / "spec.yaml"

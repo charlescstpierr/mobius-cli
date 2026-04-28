@@ -58,6 +58,8 @@ def run(
         if run_id is None:
             output.write_error_line("status --follow requires a run id")
             raise SystemExit(int(ExitCode.USAGE))
+        with EventStore(paths.event_store, read_only=read_only) as store:
+            run_id = _resolve_run_id(store, run_id)
         _follow_run(paths.event_store, paths, run_id=run_id, read_only=read_only)
         return
 
@@ -169,6 +171,11 @@ def _read_run_status(store: EventStore, run_id: str) -> RunStatusOutput | None:
 
 
 def _resolve_run_id(store: EventStore, run_id: str) -> str:
+    if run_id == "latest":
+        latest = store.get_latest_run()
+        if latest is None:
+            _raise_not_found(run_id)
+        return latest.aggregate_id
     if _read_run_status(store, run_id) is not None:
         return run_id
     matches = store.find_by_slug_prefix(run_id)
