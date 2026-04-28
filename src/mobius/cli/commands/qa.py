@@ -7,7 +7,7 @@ import typer
 from mobius.cli import output
 from mobius.cli.main import CliContext, ExitCode
 from mobius.config import get_paths
-from mobius.workflow.qa import QAReport, evaluate_run_qa
+from mobius.workflow.qa import QAReport, Verdict, evaluate_run_qa
 from mobius.workflow.run import mark_stale_run_if_needed
 
 
@@ -35,7 +35,7 @@ def run(
     else:
         _write_markdown(report)
 
-    if report.summary.failed:
+    if report.summary.global_verdict == Verdict.FAIL:
         raise typer.Exit(code=int(ExitCode.GENERIC_ERROR))
 
 
@@ -45,10 +45,12 @@ def _write_markdown(report: QAReport) -> None:
     output.write_line(f"- Mode: `{report.mode}`")
     output.write_line(f"- State: `{report.state}`")
     output.write_line(f"- Total checks: `{report.summary.total}`")
+    output.write_line(f"- Passed checks: `{report.summary.passed}`")
     output.write_line(f"- Failed checks: `{report.summary.failed}`")
+    output.write_line(f"- Unverified checks: `{report.summary.unverified}`")
+    output.write_line(f"- Global verdict: `{report.summary.global_verdict.value}`")
     output.write_line("")
     output.write_line("| Check | Result | Detail |")
     output.write_line("| --- | --- | --- |")
     for result in report.results:
-        verdict = "pass" if result.passed else "fail"
-        output.write_line(f"| {result.label} | {verdict} | {result.detail} |")
+        output.write_line(f"| {result.label} | {result.verdict.value} | {result.detail} |")

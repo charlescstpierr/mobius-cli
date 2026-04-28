@@ -61,8 +61,10 @@ def test_qa_offline_json_passes_completed_run(tmp_path: Path) -> None:
     payload = json.loads(qa_result.stdout)
     assert payload["run_id"] == run_id
     assert payload["mode"] == "offline"
-    assert payload["summary"]["total"] == len(payload["results"])
+    assert payload["summary"]["total"] == 1
     assert payload["summary"]["failed"] == 0
+    assert payload["summary"]["unverified"] == 1
+    assert payload["summary"]["global_verdict"] == "unverified"
     assert payload["results"]
 
 
@@ -84,7 +86,7 @@ def test_qa_offline_uses_event_store_when_spec_file_deleted(tmp_path: Path) -> N
     spec_result = next(
         result for result in payload["results"] if result["id"] == "spec_has_success_criteria"
     )
-    assert spec_result["passed"] is True
+    assert spec_result["verdict"] == "pass"
     assert spec_result["detail"] == "success_criteria=1"
 
 
@@ -99,8 +101,10 @@ def test_qa_json_fails_known_bad_run(tmp_path: Path) -> None:
     assert qa_result.returncode == 1
     assert qa_result.stderr == ""
     payload = json.loads(qa_result.stdout)
-    assert payload["summary"]["total"] == len(payload["results"])
-    assert payload["summary"]["failed"] > 0
+    assert payload["summary"]["total"] == 1
+    assert payload["summary"]["failed"] == 0
+    assert payload["summary"]["unverified"] == 1
+    assert payload["summary"]["global_verdict"] == "fail"
     assert any(result["id"] == "no_failure_events" for result in payload["results"])
 
 

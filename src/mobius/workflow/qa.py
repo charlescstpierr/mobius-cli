@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -22,13 +23,24 @@ _TERMINAL_STATES = frozenset({"completed", "failed", "crashed", "cancelled", "in
 _FAILURE_EVENT_TYPES = frozenset({"run.failed", "run.crashed", "run.cancelled", "run.interrupted"})
 
 
+class Verdict(StrEnum):
+    """Ternary QA verdict with worst-wins ordering."""
+
+    PASS = "pass"
+    FAIL = "fail"
+    UNVERIFIED = "unverified"
+
+
 class QASummary(BaseModel):
     """Aggregate QA verdict counts."""
 
     model_config = ConfigDict(extra="forbid")
 
     total: int
+    passed: int
     failed: int
+    unverified: int
+    global_verdict: Verdict
 
 
 class QAResult(BaseModel):
@@ -38,8 +50,13 @@ class QAResult(BaseModel):
 
     id: str
     label: str
-    passed: bool
+    verdict: Verdict
     detail: str
+
+    @property
+    def passed(self) -> bool:
+        """Return whether this result is a passing verdict."""
+        return self.verdict == Verdict.PASS
 
 
 class QAReport(BaseModel):
@@ -77,48 +94,48 @@ def evaluate_run_qa(event_store_path: Path, run_id: str) -> QAReport | None:
         QAResult(
             id="session_terminal",
             label="Session reached a terminal state",
-            passed=state in _TERMINAL_STATES,
+            verdict=_bool_verdict(state in _TERMINAL_STATES),
             detail=f"state={state}",
         ),
         QAResult(
             id="run_completed_successfully",
             label="Run completed successfully",
-            passed=state == "completed",
+            verdict=_bool_verdict(state == "completed"),
             detail=f"state={state}",
         ),
         QAResult(
             id="event_stream_started",
             label="Event stream contains run.started",
-            passed="run.started" in event_types,
+            verdict=_bool_verdict("run.started" in event_types),
             detail=_event_detail("run.started", event_types),
         ),
         QAResult(
             id="event_stream_completed",
             label="Event stream contains run.completed",
-            passed="run.completed" in event_types,
+            verdict=_bool_verdict("run.completed" in event_types),
             detail=_event_detail("run.completed", event_types),
         ),
         QAResult(
             id="spec_has_success_criteria",
             label="Seed spec contains success criteria",
-            passed=spec_criteria_count > 0,
+            verdict=_bool_verdict(spec_criteria_count > 0),
             detail=f"success_criteria={spec_criteria_count}",
         ),
         QAResult(
             id="no_failure_events",
             label="Event stream contains no failure events",
-            passed=not failure_events,
+            verdict=_bool_verdict(not failure_events),
             detail=("none" if not failure_events else f"failure_events={','.join(failure_events)}"),
         ),
     ]
-    verification_results = _run_verification_commands(
+    criterion_results = _evaluate_success_criteria(
         event_store_path,
         run_id,
         events,
         session,
     )
-    results.extend(verification_results)
-    failed = sum(1 for result in results if not result.passed)
+    results.extend(criterion_results)
+    summary = _summarize_results(results, criterion_results)
     grade = _assign_static_grade(events, session)
     if grade is not None:
         with EventStore(event_store_path) as store:
@@ -127,7 +144,7 @@ def evaluate_run_qa(event_store_path: Path, run_id: str) -> QAReport | None:
         run_id=run_id,
         mode="offline",
         state=state,
-        summary=QASummary(total=len(results), failed=failed),
+        summary=summary,
         results=results,
         grade=grade.grade if grade is not None else None,
     )
@@ -198,7 +215,7 @@ def _assign_static_grade(events: list[EventRecord], session: Any) -> SpecGrade |
     return assign_silver_grade(spec)
 
 
-def _run_verification_commands(
+def _evaluate_success_criteria(
     event_store_path: Path,
     run_id: str,
     events: list[EventRecord],
@@ -211,17 +228,37 @@ def _run_verification_commands(
         spec = load_seed_spec(spec_path)
     except (OSError, SeedSpecValidationError):
         return []
-    if not spec.verification_commands:
-        return []
 
     config = _load_verification_config(event_store_path.parent)
     results: list[QAResult] = []
     with EventStore(event_store_path) as store:
-        for index, command_spec in enumerate(spec.verification_commands, start=1):
-            proof = run_verification(command_spec, spec_path.parent, config)
-            store.append_event(run_id, "qa.verification_executed", proof.executed_event_payload())
-            store.append_event(run_id, "qa.proof_collected", proof.proof_event_payload())
-            results.append(_qa_result_from_proof(index, proof))
+        for index, criterion in enumerate(spec.success_criteria, start=1):
+            references = _criterion_reference_keys(criterion, index)
+            command_specs = [
+                command
+                for command in spec.verification_commands
+                if _command_matches_criterion(command, references)
+            ]
+            if not command_specs:
+                results.append(_unverified_criterion_result(index, criterion))
+                continue
+            proofs: list[ProofRecord] = []
+            for command_spec in command_specs:
+                try:
+                    proof = run_verification(command_spec, spec_path.parent, config)
+                except ValueError as exc:
+                    results.append(_malformed_command_result(index, criterion, exc))
+                    proofs = []
+                    break
+                store.append_event(
+                    run_id,
+                    "qa.verification_executed",
+                    proof.executed_event_payload(),
+                )
+                store.append_event(run_id, "qa.proof_collected", proof.proof_event_payload())
+                proofs.append(proof)
+            if proofs:
+                results.append(_qa_result_from_proofs(index, criterion, proofs))
     return results
 
 
@@ -236,18 +273,42 @@ def _load_verification_config(mobius_home: Path) -> dict[str, Any]:
     return dict(raw) if isinstance(raw, dict) else {}
 
 
-def _qa_result_from_proof(index: int, proof: ProofRecord) -> QAResult:
-    criterion = proof.criterion_ref or f"verification-{index}"
-    timeout_detail = ", timed_out=true" if proof.timed_out else ""
-    truncated_detail = ", truncated=true" if proof.truncated else ""
-    return QAResult(
-        id=f"verification_command_{index}",
-        label=f"Verification command for {criterion}",
-        passed=proof.exit_code == 0 and not proof.timed_out,
-        detail=(
-            f"exit_code={proof.exit_code}, duration_ms={proof.duration_ms}"
+def _qa_result_from_proofs(index: int, criterion: str, proofs: list[ProofRecord]) -> QAResult:
+    verdict = _worst_verdict(
+        Verdict.PASS if proof.exit_code == 0 and not proof.timed_out else Verdict.FAIL
+        for proof in proofs
+    )
+    proof_details = []
+    for proof in proofs:
+        timeout_detail = ", timed_out=true" if proof.timed_out else ""
+        truncated_detail = ", truncated=true" if proof.truncated else ""
+        proof_details.append(
+            f"{proof.command!r}: exit_code={proof.exit_code}, duration_ms={proof.duration_ms}"
             f"{timeout_detail}{truncated_detail}"
-        ),
+        )
+    return QAResult(
+        id=f"criterion_{index}",
+        label=f"Criterion {index}: {criterion}",
+        verdict=verdict,
+        detail="; ".join(proof_details),
+    )
+
+
+def _unverified_criterion_result(index: int, criterion: str) -> QAResult:
+    return QAResult(
+        id=f"criterion_{index}",
+        label=f"Criterion {index}: {criterion}",
+        verdict=Verdict.UNVERIFIED,
+        detail="no verification_command linked to this criterion",
+    )
+
+
+def _malformed_command_result(index: int, criterion: str, exc: ValueError) -> QAResult:
+    return QAResult(
+        id=f"criterion_{index}",
+        label=f"Criterion {index}: {criterion}",
+        verdict=Verdict.FAIL,
+        detail=f"malformed verification_command: {exc}",
     )
 
 
@@ -321,3 +382,31 @@ def _owner_present(owner: str | list[str]) -> bool:
 
 def _event_detail(event_type: str, event_types: set[str]) -> str:
     return "present" if event_type in event_types else f"missing {event_type}"
+
+
+def _bool_verdict(passed: bool) -> Verdict:
+    return Verdict.PASS if passed else Verdict.FAIL
+
+
+def _summarize_results(results: list[QAResult], criterion_results: list[QAResult]) -> QASummary:
+    counted_results = criterion_results if criterion_results else results
+    passed = sum(1 for result in counted_results if result.verdict == Verdict.PASS)
+    failed = sum(1 for result in counted_results if result.verdict == Verdict.FAIL)
+    unverified = sum(1 for result in counted_results if result.verdict == Verdict.UNVERIFIED)
+    return QASummary(
+        total=len(counted_results),
+        passed=passed,
+        failed=failed,
+        unverified=unverified,
+        global_verdict=_worst_verdict(result.verdict for result in results),
+    )
+
+
+def _worst_verdict(verdicts: Any) -> Verdict:
+    worst = Verdict.PASS
+    for verdict in verdicts:
+        if verdict == Verdict.FAIL:
+            return Verdict.FAIL
+        if verdict == Verdict.UNVERIFIED:
+            worst = Verdict.UNVERIFIED
+    return worst

@@ -2,7 +2,7 @@ import sys
 from pathlib import Path
 
 from mobius.persistence.event_store import EventStore
-from mobius.workflow.qa import assign_silver_grade, evaluate_run_qa
+from mobius.workflow.qa import Verdict, assign_silver_grade, evaluate_run_qa
 from mobius.workflow.seed import load_seed_spec
 
 
@@ -76,9 +76,11 @@ def test_evaluate_run_qa_passes_completed_run(tmp_path: Path) -> None:
 
     assert report is not None
     assert report.run_id == "run_good"
-    assert report.summary.total == len(report.results)
+    assert report.summary.total == 1
     assert report.summary.failed == 0
-    assert all(result.passed for result in report.results)
+    assert report.summary.unverified == 1
+    assert report.summary.global_verdict == Verdict.UNVERIFIED
+    assert all(result.passed for result in report.results if not result.id.startswith("criterion_"))
 
 
 def test_evaluate_run_qa_fails_non_completed_run(tmp_path: Path) -> None:
@@ -90,8 +92,10 @@ def test_evaluate_run_qa_fails_non_completed_run(tmp_path: Path) -> None:
     report = evaluate_run_qa(store_path, "run_bad")
 
     assert report is not None
-    assert report.summary.total == len(report.results)
-    assert report.summary.failed > 0
+    assert report.summary.total == 1
+    assert report.summary.failed == 0
+    assert report.summary.unverified == 1
+    assert report.summary.global_verdict == Verdict.FAIL
     failed_ids = {result.id for result in report.results if not result.passed}
     assert "run_completed_successfully" in failed_ids
     assert "no_failure_events" in failed_ids
@@ -114,6 +118,8 @@ def test_evaluate_run_qa_uses_event_store_not_spec_file(tmp_path: Path) -> None:
 
     assert report is not None
     assert report.summary.failed == 0
+    assert report.summary.unverified == 0
+    assert report.summary.global_verdict == Verdict.PASS
     spec_check = next(
         result for result in report.results if result.id == "spec_has_success_criteria"
     )
@@ -239,3 +245,60 @@ verification_commands:
     assert proof_payload["criterion_ref"] == "B9"
     assert proof_payload["exit_code"] == 0
     assert proof_payload["stdout"].strip() == "42"
+
+
+def test_verdict_worst_wins_counts_pass_fail_unverified(tmp_path: Path) -> None:
+    spec = tmp_path / "spec.yaml"
+    spec.write_text(
+        f"""
+project_type: greenfield
+goal: Count ternary criterion verdicts.
+constraints:
+  - Keep verification local.
+success_criteria:
+  - pass-criterion
+  - fail-criterion
+  - unverified-criterion
+non_goals:
+  - Do not call an LLM.
+owner: qa-team
+verification_commands:
+  - command: "{sys.executable} -c 'import sys; sys.exit(0)'"
+    criterion_ref: pass-criterion
+  - command: "{sys.executable} -c 'import sys; sys.exit(7)'"
+    criterion_ref: fail-criterion
+""".strip(),
+        encoding="utf-8",
+    )
+    store_path = tmp_path / "events.db"
+    create_completed_run(store_path, "run_ternary", spec)
+
+    report = evaluate_run_qa(store_path, "run_ternary")
+
+    assert report is not None
+    assert report.summary.passed == 1
+    assert report.summary.failed == 1
+    assert report.summary.unverified == 1
+    assert report.summary.global_verdict == Verdict.FAIL
+    criterion_verdicts = {
+        result.label: result.verdict
+        for result in report.results
+        if result.id.startswith("criterion_")
+    }
+    assert criterion_verdicts["Criterion 1: pass-criterion"] == Verdict.PASS
+    assert criterion_verdicts["Criterion 2: fail-criterion"] == Verdict.FAIL
+    assert criterion_verdicts["Criterion 3: unverified-criterion"] == Verdict.UNVERIFIED
+
+
+def test_criterion_without_verification_command_is_unverified(tmp_path: Path) -> None:
+    spec = tmp_path / "spec.yaml"
+    write_spec(spec)
+    store_path = tmp_path / "events.db"
+    create_completed_run(store_path, "run_unverified", spec)
+
+    report = evaluate_run_qa(store_path, "run_unverified")
+
+    assert report is not None
+    criterion = next(result for result in report.results if result.id == "criterion_1")
+    assert criterion.verdict == Verdict.UNVERIFIED
+    assert criterion.passed is False
