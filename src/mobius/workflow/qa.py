@@ -16,6 +16,7 @@ from mobius.workflow.seed import (
     assign_bronze_grade,
     load_seed_spec,
 )
+from mobius.workflow.verify import ProofRecord, run_verification
 
 _TERMINAL_STATES = frozenset({"completed", "failed", "crashed", "cancelled", "interrupted"})
 _FAILURE_EVENT_TYPES = frozenset({"run.failed", "run.crashed", "run.cancelled", "run.interrupted"})
@@ -110,6 +111,13 @@ def evaluate_run_qa(event_store_path: Path, run_id: str) -> QAReport | None:
             detail=("none" if not failure_events else f"failure_events={','.join(failure_events)}"),
         ),
     ]
+    verification_results = _run_verification_commands(
+        event_store_path,
+        run_id,
+        events,
+        session,
+    )
+    results.extend(verification_results)
     failed = sum(1 for result in results if not result.passed)
     grade = _assign_static_grade(events, session)
     if grade is not None:
@@ -188,6 +196,59 @@ def _assign_static_grade(events: list[EventRecord], session: Any) -> SpecGrade |
     except (OSError, SeedSpecValidationError):
         return None
     return assign_silver_grade(spec)
+
+
+def _run_verification_commands(
+    event_store_path: Path,
+    run_id: str,
+    events: list[EventRecord],
+    session: Any,
+) -> list[QAResult]:
+    spec_path = _spec_path_from_session(session) or _spec_path_from_events(events)
+    if spec_path is None:
+        return []
+    try:
+        spec = load_seed_spec(spec_path)
+    except (OSError, SeedSpecValidationError):
+        return []
+    if not spec.verification_commands:
+        return []
+
+    config = _load_verification_config(event_store_path.parent)
+    results: list[QAResult] = []
+    with EventStore(event_store_path) as store:
+        for index, command_spec in enumerate(spec.verification_commands, start=1):
+            proof = run_verification(command_spec, spec_path.parent, config)
+            store.append_event(run_id, "qa.verification_executed", proof.executed_event_payload())
+            store.append_event(run_id, "qa.proof_collected", proof.proof_event_payload())
+            results.append(_qa_result_from_proof(index, proof))
+    return results
+
+
+def _load_verification_config(mobius_home: Path) -> dict[str, Any]:
+    config_path = mobius_home / "config.json"
+    if not config_path.exists():
+        return {}
+    try:
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return dict(raw) if isinstance(raw, dict) else {}
+
+
+def _qa_result_from_proof(index: int, proof: ProofRecord) -> QAResult:
+    criterion = proof.criterion_ref or f"verification-{index}"
+    timeout_detail = ", timed_out=true" if proof.timed_out else ""
+    truncated_detail = ", truncated=true" if proof.truncated else ""
+    return QAResult(
+        id=f"verification_command_{index}",
+        label=f"Verification command for {criterion}",
+        passed=proof.exit_code == 0 and not proof.timed_out,
+        detail=(
+            f"exit_code={proof.exit_code}, duration_ms={proof.duration_ms}"
+            f"{timeout_detail}{truncated_detail}"
+        ),
+    )
 
 
 def _spec_path_from_session(session: Any) -> Path | None:

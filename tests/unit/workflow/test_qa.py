@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 
 from mobius.persistence.event_store import EventStore
@@ -198,3 +199,43 @@ def test_evaluate_run_qa_emits_silver_grade_event(tmp_path: Path) -> None:
     payload = grade_events[0].payload_data
     assert payload["grade"] == "silver"
     assert payload["criteria_met"] == payload["criteria_total"] == 7
+
+
+def test_evaluate_run_qa_executes_verification_and_emits_proof(tmp_path: Path) -> None:
+    spec = tmp_path / "spec.yaml"
+    spec.write_text(
+        f"""
+project_type: greenfield
+goal: Collect command proof during QA.
+constraints:
+  - Keep verification local.
+success_criteria:
+  - B9
+non_goals:
+  - Do not call an LLM.
+owner: qa-team
+verification_commands:
+  - command: "{sys.executable} -c 'print(42)'"
+    criterion_ref: B9
+    timeout_s: 5
+""".strip(),
+        encoding="utf-8",
+    )
+    store_path = tmp_path / "events.db"
+    create_completed_run(store_path, "run_verify", spec)
+
+    report = evaluate_run_qa(store_path, "run_verify")
+
+    assert report is not None
+    assert report.summary.failed == 0
+    with EventStore(store_path, read_only=True) as store:
+        events = store.read_events("run_verify")
+    executed = [event for event in events if event.type == "qa.verification_executed"]
+    proofs = [event for event in events if event.type == "qa.proof_collected"]
+    assert len(executed) == 1
+    assert len(proofs) == 1
+    assert executed[0].payload_data["criterion_ref"] == "B9"
+    proof_payload = proofs[0].payload_data
+    assert proof_payload["criterion_ref"] == "B9"
+    assert proof_payload["exit_code"] == 0
+    assert proof_payload["stdout"].strip() == "42"
