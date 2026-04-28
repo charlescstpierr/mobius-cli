@@ -1,0 +1,23 @@
+session_id: interview_rendre-mobius-plus-efficace-pour_7db0b5d5
+project_type: brownfield
+template: lib
+ambiguity_score: 0.0
+ambiguity_gate: 0.2
+ambiguity_components:
+  goal: 0.0
+  constraints: 0.0
+  success: 0.0
+  context: 0.0
+goal: Rendre Mobius plus efficace pour les agents en réduisant la friction de création de spec, en renforçant la QA déterministe, et en simplifiant la boucle interview/seed/run/status/qa sans ajouter de serveur MCP ni de dépendance LLM.
+constraints:
+  - "Aucun workflow utile ne doit crasher dans le parcours agent interview -> spec -> seed -> run -> status -> qa."
+  - Conserver Mobius comme CLI rapide, MCP-free, sans serveur long-running et sans LLM intégré.
+  - Préserver la compatibilité avec les specs existantes et les sorties CLI documentées autant que possible.
+  - "Conserver les standards du repo: Python >=3.12, mypy strict, ruff, pytest, couverture >=95%."
+success_criteria:
+  - "Un smoke test end-to-end couvre interview -> spec -> seed -> run -> status -> qa et passe sans crash."
+  - Les commandes du workflow agent retournent des erreurs claires et documentées au lieu de stack traces ou sorties ambiguës.
+  - mobius qa détecte les specs ou runs incomplets, incohérents, ou non vérifiables.
+  - "La suite pytest passe avec couverture >=95%."
+  - Les budgets de performance CLI existants ne régressent pas pour help/status.
+context: "Repo brownfield /Users/charles/Desktop/Mobius: package Python mobius 0.1.5, CLI MCP-free inspiré d'Ouroboros, event-store SQLite, commandes interview/seed/run/status/qa/evolve/lineage/setup. Objectif utilisateur: que tout le workflow fonctionne à 100%, sans crash visible."

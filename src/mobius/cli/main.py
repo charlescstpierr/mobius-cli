@@ -220,6 +220,26 @@ def repair_command(
     cast(Any, module).run(ctx.obj, json_output=json_output)
 
 
+@app.command(name="migrate", help="Upgrade a Mobius spec.yaml file to spec v2.")
+def migrate_command(
+    ctx: typer.Context,
+    spec_path: Annotated[
+        Path,
+        typer.Argument(help="Spec file to migrate (defaults to ./spec.yaml)."),
+    ] = Path("spec.yaml"),
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Emit machine-readable JSON.",
+        ),
+    ] = False,
+) -> None:
+    """Upgrade a v1 spec to spec_version: 2 with a preserved backup."""
+    module = importlib.import_module("mobius.cli.commands.migrate")
+    cast(Any, module).run(ctx.obj, spec_path, json_output=json_output)
+
+
 @app.command(name="cancel", help="Cancel a detached Mobius run.")
 def cancel_command(
     ctx: typer.Context,
