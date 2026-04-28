@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
+from typing import Any
 
 from rich.console import Console
 
@@ -20,6 +21,11 @@ def write_line(message: str) -> None:
 def write_json(message: str) -> None:
     """Write one compact JSON payload to stdout."""
     sys.stdout.write(f"{message}\n")
+
+
+def write_rich(renderable: Any, *, width: int | None = None) -> None:
+    """Write a Rich renderable to stdout."""
+    Console(file=sys.stdout, no_color=_no_color(), soft_wrap=True, width=width).print(renderable)
 
 
 def write_error_line(message: str) -> None:
