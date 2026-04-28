@@ -204,6 +204,22 @@ def doctor_command(
     cast(Any, module).run(ctx.obj, json_output=json_output)
 
 
+@app.command(name="repair", help="Repair known Mobius environment issues.")
+def repair_command(
+    ctx: typer.Context,
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Emit machine-readable JSON repairs.",
+        ),
+    ] = False,
+) -> None:
+    """Repair stale shebangs, permissions, and missing Mobius config."""
+    module = importlib.import_module("mobius.cli.commands.repair")
+    cast(Any, module).run(ctx.obj, json_output=json_output)
+
+
 @app.command(name="cancel", help="Cancel a detached Mobius run.")
 def cancel_command(
     ctx: typer.Context,
