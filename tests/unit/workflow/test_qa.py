@@ -1,11 +1,29 @@
 from pathlib import Path
 
 from mobius.persistence.event_store import EventStore
-from mobius.workflow.qa import evaluate_run_qa
+from mobius.workflow.qa import assign_silver_grade, evaluate_run_qa
+from mobius.workflow.seed import load_seed_spec
 
 
-def write_spec(path: Path, *, success_criteria: bool = True) -> None:
+def write_spec(
+    path: Path,
+    *,
+    success_criteria: bool = True,
+    silver: bool = False,
+) -> None:
     success_block = "  - QA returns a passing verdict" if success_criteria else ""
+    silver_block = (
+        """
+non_goals:
+  - Do not call an LLM.
+owner: qa-team
+verification_commands:
+  - command: "python -c 'print(1)'"
+    criterion_ref: "QA returns a passing verdict"
+"""
+        if silver
+        else ""
+    )
     path.write_text(
         f"""
 project_type: greenfield
@@ -14,6 +32,7 @@ constraints:
   - Use deterministic offline heuristics
 success_criteria:
 {success_block}
+{silver_block}
 """.strip(),
         encoding="utf-8",
     )
@@ -99,3 +118,83 @@ def test_evaluate_run_qa_uses_event_store_not_spec_file(tmp_path: Path) -> None:
     )
     assert spec_check.passed is True
     assert spec_check.detail == "success_criteria=1"
+
+
+def test_assign_silver_grade_requires_every_criterion_linked(tmp_path: Path) -> None:
+    spec = tmp_path / "spec.yaml"
+    spec.write_text(
+        """
+project_type: greenfield
+goal: Grade a complete QA-ready spec.
+constraints:
+  - Keep grading static.
+success_criteria:
+  - First criterion has proof.
+  - B8 - Silver grade is assigned.
+non_goals:
+  - Do not execute commands for Silver.
+owner: alice
+verification_commands:
+  - command: "true"
+    criterion_ref: "First criterion has proof."
+  - command: "true"
+    criterion_ref: B8
+""".strip(),
+        encoding="utf-8",
+    )
+
+    grade = assign_silver_grade(load_seed_spec(spec))
+
+    assert grade.grade == "silver"
+    assert grade.criteria_met == 7
+    assert grade.criteria_total == 7
+    assert grade.details["all_success_criteria_linked"] is True
+    assert grade.details["non_goals_present"] is True
+    assert grade.details["owner_present"] is True
+
+
+def test_assign_silver_grade_demotes_to_bronze_when_static_checks_missing(
+    tmp_path: Path,
+) -> None:
+    spec = tmp_path / "spec.yaml"
+    spec.write_text(
+        """
+project_type: greenfield
+goal: Grade an incomplete QA spec.
+constraints:
+  - Keep grading static.
+success_criteria:
+  - Criterion lacks a command.
+owner: alice
+""".strip(),
+        encoding="utf-8",
+    )
+
+    grade = assign_silver_grade(load_seed_spec(spec))
+
+    assert grade.grade == "bronze"
+    assert grade.details["all_success_criteria_linked"] is False
+    assert grade.details["non_goals_present"] is False
+    assert grade.details["owner_present"] is True
+
+
+def test_evaluate_run_qa_emits_silver_grade_event(tmp_path: Path) -> None:
+    spec = tmp_path / "spec.yaml"
+    write_spec(spec, silver=True)
+    store_path = tmp_path / "events.db"
+    create_completed_run(store_path, "run_silver", spec)
+
+    report = evaluate_run_qa(store_path, "run_silver")
+
+    assert report is not None
+    assert report.grade == "silver"
+    with EventStore(store_path, read_only=True) as store:
+        grade_events = [
+            event
+            for event in store.read_events("run_silver")
+            if event.type == "spec.grade_assigned"
+        ]
+    assert len(grade_events) == 1
+    payload = grade_events[0].payload_data
+    assert payload["grade"] == "silver"
+    assert payload["criteria_met"] == payload["criteria_total"] == 7
