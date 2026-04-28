@@ -348,6 +348,29 @@ def hud_command(
     cast(Any, module).run(ctx.obj, json_output=json_output)
 
 
+@app.command(name="grade", help="Assign the projection-backed Mobius runtime grade.")
+def grade_command(
+    ctx: typer.Context,
+    agent: Annotated[
+        str,
+        typer.Option(
+            "--agent",
+            help="Known handoff agent used for dry-run prompt completeness.",
+        ),
+    ] = "claude",
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Emit machine-readable JSON.",
+        ),
+    ] = False,
+) -> None:
+    """Evaluate Gold criteria from the projection cache and emit a grade event."""
+    module = importlib.import_module("mobius.cli.commands.grade")
+    cast(Any, module).run(ctx.obj, agent=agent, json_output=json_output)
+
+
 @app.command(name="run", help="Execute a Mobius seed spec.")
 def run_command(
     ctx: typer.Context,

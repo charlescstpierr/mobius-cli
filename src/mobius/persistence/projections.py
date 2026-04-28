@@ -97,12 +97,30 @@ class SpecProjectionUpdater:
                     current_spec["owner"] = payload.get("owner")
                 success_criteria = payload.get("success_criteria")
                 verification_commands = payload.get("verification_commands")
+                constraints = payload.get("constraints")
+                non_goals = payload.get("non_goals")
+                risks = payload.get("risks")
+                artifacts = payload.get("artifacts")
                 if isinstance(success_criteria, list):
                     current_spec["success_criteria"] = [str(item) for item in success_criteria]
                 if isinstance(verification_commands, list):
                     current_spec["verification_commands"] = [
                         dict(item) for item in verification_commands if isinstance(item, dict)
                     ]
+                if isinstance(constraints, list):
+                    current_spec["constraints"] = [str(item) for item in constraints]
+                if isinstance(non_goals, list):
+                    current_spec["non_goals"] = [str(item) for item in non_goals]
+                if isinstance(risks, list):
+                    current_spec["risks"] = [
+                        dict(item) for item in risks if isinstance(item, dict)
+                    ]
+                if isinstance(artifacts, list):
+                    current_spec["artifacts"] = [
+                        dict(item) for item in artifacts if isinstance(item, dict)
+                    ]
+                if payload.get("agent_instructions") is not None:
+                    current_spec["agent_instructions"] = payload.get("agent_instructions")
                 if event.type == "seed.completed":
                     _initialize_projected_criteria(snapshot, payload)
                 snapshot["current_spec"] = current_spec

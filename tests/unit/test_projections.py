@@ -136,6 +136,34 @@ def test_freshness_for_each_event_type() -> None:
     assert snapshot == {"count": 3, "last": "run.started"}
 
 
+def test_seed_projection_preserves_enriched_spec_fields(tmp_path: Path) -> None:
+    db_path = tmp_path / "events.db"
+    with EventStore(db_path) as store:
+        store.append_event(
+            "seed-rich",
+            "seed.completed",
+            {
+                "goal": "Project rich fields.",
+                "constraints": ["Keep cache complete."],
+                "success_criteria": ["C1"],
+                "verification_commands": [{"command": "true", "criterion_ref": "C1"}],
+                "non_goals": ["Do not replay."],
+                "risks": [{"description": "drift"}],
+                "artifacts": [{"name": "report", "path": "report.md"}],
+                "owner": ["alice", "bob"],
+                "agent_instructions": {"claude": "Use validators."},
+            },
+        )
+        snapshot = _snapshot(store)
+
+    current_spec = snapshot["current_spec"]
+    assert current_spec["constraints"] == ["Keep cache complete."]
+    assert current_spec["non_goals"] == ["Do not replay."]
+    assert current_spec["risks"] == [{"description": "drift"}]
+    assert current_spec["artifacts"] == [{"name": "report", "path": "report.md"}]
+    assert current_spec["agent_instructions"] == {"claude": "Use validators."}
+
+
 def test_projection_cli_rebuild_from_event_requires_existing_event(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
