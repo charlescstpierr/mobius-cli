@@ -75,6 +75,7 @@ Commands:
   status     Show Mobius event-store status.
   ac-tree    Print a compact acceptance-criteria tree for a run.
   qa         Run deterministic QA checks for a Mobius run.
+  handoff    Render a versioned prompt for a coding agent.
   cancel     Cancel a detached Mobius run.
   evolve     Run a Mobius generation evolution loop.
   lineage    Print an aggregate lineage tree or replay hash.

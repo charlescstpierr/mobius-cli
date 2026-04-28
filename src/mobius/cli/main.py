@@ -293,6 +293,45 @@ def qa_command(
     )
 
 
+@app.command(name="handoff", help="Render a versioned prompt for a coding agent.")
+def handoff_command(
+    ctx: typer.Context,
+    agent: Annotated[
+        str,
+        typer.Option(
+            "--agent",
+            help="Known handoff agent: claude, codex, or hermes.",
+        ),
+    ] = "claude",
+    spec_path: Annotated[
+        Path,
+        typer.Option(
+            "--spec",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+            help="Spec file to render into an agent handoff prompt.",
+        ),
+    ] = Path("spec.yaml"),
+    dry_run: Annotated[
+        bool,
+        typer.Option(
+            "--dry-run",
+            help="Print the rendered prompt to stdout.",
+        ),
+    ] = False,
+) -> None:
+    """Render a handoff prompt and emit a handoff.generated event."""
+    module = importlib.import_module("mobius.cli.commands.handoff")
+    cast(Any, module).run(
+        ctx.obj,
+        agent=agent,
+        spec_path=spec_path,
+        dry_run=dry_run,
+    )
+
+
 @app.command(name="run", help="Execute a Mobius seed spec.")
 def run_command(
     ctx: typer.Context,
