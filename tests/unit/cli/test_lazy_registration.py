@@ -41,6 +41,7 @@ def test_handler_modules_are_not_imported_for_help() -> None:
         "mobius.cli.commands.lineage",
         "mobius.cli.commands.setup",
         "mobius.cli.commands.doctor",
+        "mobius.cli.commands.smoke",
         "mobius.cli.commands.config",
     ]
 

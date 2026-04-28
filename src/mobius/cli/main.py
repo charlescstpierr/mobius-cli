@@ -728,6 +728,43 @@ def runs_ls_command(
 app.add_typer(runs_app, name="runs")
 
 
+workflow_app = typer.Typer(
+    add_completion=False,
+    context_settings={"help_option_names": ["-h", "--help"]},
+    help="Run complete local workflow checks.",
+)
+
+
+@workflow_app.command(name="smoke")
+def workflow_smoke_command(
+    ctx: typer.Context,
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Emit machine-readable JSON with per-step results.",
+        ),
+    ] = False,
+    keep_workspace: Annotated[
+        bool,
+        typer.Option(
+            "--keep-workspace",
+            help="Do not remove the temporary smoke workspace after the run.",
+        ),
+    ] = False,
+) -> None:
+    """Run init, interview, seed, run, status, and QA in a temp workspace."""
+    module = importlib.import_module("mobius.cli.commands.smoke")
+    cast(Any, module).run(
+        ctx.obj,
+        json_output=json_output,
+        keep_workspace=keep_workspace,
+    )
+
+
+app.add_typer(workflow_app, name="workflow")
+
+
 worker_app = typer.Typer(
     add_completion=False,
     context_settings={"help_option_names": ["-h", "--help"]},
