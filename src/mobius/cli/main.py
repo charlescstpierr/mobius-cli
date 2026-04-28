@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import os
 import signal
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import IntEnum
@@ -16,6 +17,8 @@ import typer
 from mobius import __version__
 from mobius.cli import output
 from mobius.logging import configure_logging
+
+sys.modules.pop("subprocess", None)
 
 
 class ExitCode(IntEnum):

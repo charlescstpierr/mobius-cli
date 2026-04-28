@@ -2,17 +2,27 @@
 
 from __future__ import annotations
 
-import json
-import os
-import sqlite3
 import sys
-import uuid
-from contextlib import suppress
-from datetime import UTC, datetime
-from pathlib import Path
-from typing import NoReturn
+from typing import TYPE_CHECKING, Any, NoReturn, cast
 
-from mobius import __version__
+if TYPE_CHECKING:
+    from pathlib import Path
+    from sqlite3 import Connection as SQLiteConnection
+
+
+class _LazyModuleProxy:
+    def __init__(self, module_name: str) -> None:
+        self._module_name = module_name
+
+    def __getattr__(self, name: str) -> Any:
+        import importlib
+
+        module = importlib.import_module(self._module_name)
+        return getattr(module, name)
+
+
+os = _LazyModuleProxy("os")
+sqlite3 = _LazyModuleProxy("sqlite3")
 
 _TERMINAL_STATES = frozenset({"completed", "failed", "crashed", "cancelled", "interrupted"})
 # Latest applied SQLite schema version. Kept in sync with mobius.persistence.event_store.MIGRATIONS.
@@ -35,6 +45,9 @@ def main() -> None:
 
 def _exit_with_state_dir_error(exc: OSError) -> NoReturn:
     """Translate a state-directory I/O error into a friendly exit message."""
+    import os
+    from pathlib import Path
+
     mobius_home = os.environ.get("MOBIUS_HOME") or str(Path.home() / ".mobius")
     reason = exc.strerror or exc.__class__.__name__
     sys.stderr.write(
@@ -44,11 +57,17 @@ def _exit_with_state_dir_error(exc: OSError) -> NoReturn:
     raise SystemExit(1) from exc
 
 
+def _sqlite3() -> Any:
+    return sqlite3
+
+
 def _try_fast_path(argv: list[str]) -> bool:
     if argv in (["--help"], ["-h"]):
         _write_fast_help()
         return True
     if argv == ["--version"]:
+        from mobius import __version__
+
         sys.stdout.write(f"mobius {__version__}\n")
         return True
     if _try_fast_hud(argv):
@@ -91,6 +110,10 @@ Commands:
 
 
 def _try_fast_hud(argv: list[str]) -> bool:
+    import json
+    import os
+    from pathlib import Path
+
     json_output = False
     remaining = list(argv)
     if remaining and remaining[0] == "--json":
@@ -117,7 +140,7 @@ def _try_fast_hud(argv: list[str]) -> bool:
                     "SELECT snapshot FROM aggregates WHERE aggregate_id = ?",
                     ("mobius.projection.cache",),
                 ).fetchone()
-        except sqlite3.Error:
+        except _sqlite3().Error:
             return False
         if row is not None:
             try:
@@ -204,6 +227,8 @@ def _fast_next_command(criteria: list[dict[str, object]]) -> str | None:
 
 
 def _write_fast_hud(payload: dict[str, object]) -> None:
+    import json
+
     spec = _object_dict(payload.get("spec"))
     latest_run = _object_dict(payload.get("latest_run"))
     criteria = payload.get("criteria")
@@ -249,6 +274,10 @@ def _write_fast_hud(payload: dict[str, object]) -> None:
 
 
 def _try_fast_store_status(argv: list[str]) -> bool:
+    import json
+    import os
+    from pathlib import Path
+
     """Fast path for ``mobius status`` with no run id (store-level status).
 
     This path avoids importing rich, pydantic, and workflow modules. It only
@@ -277,12 +306,12 @@ def _try_fast_store_status(argv: list[str]) -> bool:
         # Bootstrap the store inline so first-run still hits the fast budget.
         try:
             _fast_bootstrap_store(mobius_home, db_path)
-        except (OSError, sqlite3.Error):
+        except (OSError, _sqlite3().Error):
             return False
 
     try:
         connection = _connect(db_path, read_only=True)
-    except sqlite3.Error:
+    except _sqlite3().Error:
         return False
     try:
         try:
@@ -290,7 +319,7 @@ def _try_fast_store_status(argv: list[str]) -> bool:
                 "SELECT count(*) FROM schema_migrations WHERE version = ?",
                 (_LATEST_SCHEMA_VERSION,),
             ).fetchone()
-        except sqlite3.Error:
+        except _sqlite3().Error:
             return False
         if row is None or int(row[0]) == 0:
             return False
@@ -323,6 +352,10 @@ def _try_fast_store_status(argv: list[str]) -> bool:
 
 
 def _try_fast_status(argv: list[str]) -> bool:
+    import json
+    import os
+    from pathlib import Path
+
     json_output = False
     remaining = list(argv)
     if remaining and remaining[0] == "--json":
@@ -348,7 +381,7 @@ def _try_fast_status(argv: list[str]) -> bool:
     try:
         with _connect(db_path, read_only=True) as connection:
             run_id = _fast_resolve_run_id(connection, run_id)
-    except sqlite3.Error as exc:
+    except _sqlite3().Error as exc:
         sys.stderr.write(f"status failed: {exc}\n")
         raise SystemExit(1) from exc
 
@@ -375,7 +408,7 @@ def _try_fast_status(argv: list[str]) -> bool:
                 """,
                 (run_id,),
             ).fetchone()
-    except sqlite3.Error as exc:
+    except _sqlite3().Error as exc:
         sys.stderr.write(f"status failed: {exc}\n")
         raise SystemExit(1) from exc
 
@@ -400,7 +433,7 @@ def _try_fast_status(argv: list[str]) -> bool:
     return True
 
 
-def _fast_resolve_run_id(connection: sqlite3.Connection, run_id: str) -> str:
+def _fast_resolve_run_id(connection: SQLiteConnection, run_id: str) -> str:
     if run_id == "latest":
         row = connection.execute(
             """
@@ -520,8 +553,12 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 
 def _fast_bootstrap_store(mobius_home: Path, db_path: Path) -> None:
     """Create the event store and apply the initial migration without imports."""
+    import json
+    import os
+
     mobius_home.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(mobius_home, 0o700)
+    sqlite3 = _sqlite3()
     connection = sqlite3.connect(db_path, timeout=30.0, isolation_level=None)
     try:
         os.chmod(db_path, 0o600)
@@ -578,7 +615,8 @@ def _fast_bootstrap_store(mobius_home: Path, db_path: Path) -> None:
         connection.close()
 
 
-def _connect(db_path: Path, *, read_only: bool) -> sqlite3.Connection:
+def _connect(db_path: Path, *, read_only: bool) -> SQLiteConnection:
+    sqlite3 = _sqlite3()
     if read_only:
         connection = sqlite3.connect(
             f"file:{db_path}?mode=ro",
@@ -593,11 +631,11 @@ def _connect(db_path: Path, *, read_only: bool) -> sqlite3.Connection:
     connection.execute("PRAGMA busy_timeout=30000")
     connection.execute("PRAGMA synchronous=NORMAL")
     connection.execute("PRAGMA foreign_keys=ON")
-    return connection
+    return cast("SQLiteConnection", connection)
 
 
 def _create_session(
-    connection: sqlite3.Connection,
+    connection: SQLiteConnection,
     session_id: str,
     runtime: str,
     metadata: dict[str, object],
@@ -612,11 +650,13 @@ def _create_session(
 
 
 def _append_event(
-    connection: sqlite3.Connection,
+    connection: SQLiteConnection,
     aggregate_id: str,
     event_type: str,
     payload: dict[str, object],
 ) -> None:
+    import uuid
+
     sequence = connection.execute(
         "SELECT COALESCE(MAX(sequence), 0) + 1 FROM events WHERE aggregate_id = ?",
         (aggregate_id,),
@@ -650,6 +690,8 @@ def _append_event(
 
 
 def _canonical_json(payload: dict[str, object]) -> str:
+    import json
+
     return json.dumps(payload, sort_keys=True, separators=(",", ":"))
 
 
@@ -685,6 +727,8 @@ def _int(value: object) -> int:
 
 
 def _fast_duration(latest_run: dict[str, object]) -> str:
+    from datetime import UTC, datetime
+
     started_at = _text(latest_run.get("started_at"), "")
     ended_at = _text(latest_run.get("ended_at"), "") or _text(
         latest_run.get("last_event_at"), ""
@@ -711,6 +755,8 @@ def _fast_duration(latest_run: dict[str, object]) -> str:
 
 
 def _iso8601_utc_now() -> str:
+    from datetime import UTC, datetime
+
     return datetime.now(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
@@ -733,6 +779,8 @@ def _pid_is_live(pid: int) -> bool:
 
 
 def _cleanup_pid_file(pid_file: Path) -> None:
+    from contextlib import suppress
+
     with suppress(FileNotFoundError):
         pid_file.unlink()
 
