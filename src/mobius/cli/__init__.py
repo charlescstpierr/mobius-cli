@@ -51,6 +51,8 @@ def _try_fast_path(argv: list[str]) -> bool:
     if argv == ["--version"]:
         sys.stdout.write(f"mobius {__version__}\n")
         return True
+    if _try_fast_hud(argv):
+        return True
     if _try_fast_store_status(argv):
         return True
     return bool(_try_fast_status(argv))
@@ -76,14 +78,174 @@ Commands:
   ac-tree    Print a compact acceptance-criteria tree for a run.
   qa         Run deterministic QA checks for a Mobius run.
   handoff    Render a versioned prompt for a coding agent.
+  hud        Show the projection-backed Mobius dashboard.
   cancel     Cancel a detached Mobius run.
   evolve     Run a Mobius generation evolution loop.
   lineage    Print an aggregate lineage tree or replay hash.
   setup      Install or remove Mobius agent integration assets.
   config     Show, get, and set Mobius configuration.
   runs       List runs (and optionally evolutions) recorded in the event store.
+  projection Manage the Mobius projection cache.
 """
     )
+
+
+def _try_fast_hud(argv: list[str]) -> bool:
+    json_output = False
+    remaining = list(argv)
+    if remaining and remaining[0] == "--json":
+        json_output = True
+        remaining.pop(0)
+    if not remaining or remaining[0] != "hud":
+        return False
+    options = remaining[1:]
+    if "-h" in options or "--help" in options:
+        return False
+    if "--json" in options:
+        json_output = True
+        options.remove("--json")
+    if options:
+        return False
+
+    mobius_home = Path(os.environ.get("MOBIUS_HOME", str(Path.home() / ".mobius"))).expanduser()
+    snapshot: dict[str, object] = {}
+    db_path = mobius_home / "events.db"
+    if db_path.exists():
+        try:
+            with _connect(db_path, read_only=True) as connection:
+                row = connection.execute(
+                    "SELECT snapshot FROM aggregates WHERE aggregate_id = ?",
+                    ("mobius.projection.cache",),
+                ).fetchone()
+        except sqlite3.Error:
+            return False
+        if row is not None:
+            try:
+                parsed = json.loads(str(row["snapshot"]))
+            except (KeyError, TypeError, json.JSONDecodeError):
+                parsed = {}
+            if isinstance(parsed, dict):
+                snapshot = parsed
+
+    payload = _fast_hud_payload(snapshot)
+    if json_output:
+        sys.stdout.write(json.dumps(payload, separators=(",", ":")) + "\n")
+        return True
+    _write_fast_hud(payload)
+    return True
+
+
+def _fast_hud_payload(snapshot: dict[str, object]) -> dict[str, object]:
+    spec = _object_dict(snapshot.get("current_spec"))
+    grade = _object_dict(snapshot.get("last_grade"))
+    latest_run = _object_dict(snapshot.get("latest_run"))
+    criteria = _fast_hud_criteria(snapshot)
+    return {
+        "spec": {
+            "goal": _text(spec.get("goal"), "(unknown)"),
+            "owner": _owner_text(spec.get("owner")),
+            "grade": _text(grade.get("grade"), "ungraded"),
+        },
+        "latest_run": {
+            "id": _text(latest_run.get("id"), "(none)"),
+            "title": _text(latest_run.get("title"), "(none)"),
+            "status": _text(latest_run.get("status"), "unknown"),
+            "duration": _fast_duration(latest_run),
+        },
+        "criteria": criteria,
+        "next_recommended_command": _fast_next_command(criteria),
+        "proofs_collected": _int(snapshot.get("proofs_collected")),
+        "last_qa_timestamp": _text(snapshot.get("last_qa_timestamp"), "(none)"),
+        "stale": bool(snapshot.get("stale", False)),
+    }
+
+
+def _fast_hud_criteria(snapshot: dict[str, object]) -> list[dict[str, object]]:
+    raw = snapshot.get("criteria")
+    if isinstance(raw, list):
+        criteria: list[dict[str, object]] = []
+        for index, item in enumerate(raw, start=1):
+            if not isinstance(item, dict):
+                continue
+            commands_raw = item.get("commands")
+            commands = (
+                [str(command) for command in commands_raw]
+                if isinstance(commands_raw, list)
+                else []
+            )
+            criteria.append(
+                {
+                    "id": _text(item.get("id"), f"C{index}"),
+                    "label": _text(item.get("label"), _text(item.get("id"), f"Criterion {index}")),
+                    "verdict": _text(item.get("verdict"), "unverified").lower(),
+                    "commands": commands,
+                }
+            )
+        if criteria:
+            return criteria
+    summary = _object_dict(snapshot.get("criteria_summary"))
+    by_criterion = _object_dict(summary.get("by_criterion"))
+    return [
+        {"id": str(key), "label": str(key), "verdict": str(value).lower(), "commands": []}
+        for key, value in sorted(by_criterion.items())
+    ]
+
+
+def _fast_next_command(criteria: list[dict[str, object]]) -> str | None:
+    for criterion in criteria:
+        commands = criterion.get("commands")
+        if (
+            str(criterion.get("verdict", "")).lower() == "unverified"
+            and isinstance(commands, list)
+            and commands
+        ):
+            return str(commands[0])
+    return None
+
+
+def _write_fast_hud(payload: dict[str, object]) -> None:
+    spec = _object_dict(payload.get("spec"))
+    latest_run = _object_dict(payload.get("latest_run"))
+    criteria = payload.get("criteria")
+    criteria_rows = criteria if isinstance(criteria, list) else []
+    sys.stdout.write(
+        "# Mobius HUD\n\n"
+        "## Current Spec\n"
+        f"- Goal: {spec.get('goal')}\n"
+        f"- Owner: {spec.get('owner')}\n"
+        f"- Grade: {spec.get('grade')}\n\n"
+        "## Latest Run\n"
+        f"- ID: {latest_run.get('id')}\n"
+        f"- Title: {latest_run.get('title')}\n"
+        f"- Status: {latest_run.get('status')}\n"
+        f"- Duration: {latest_run.get('duration')}\n\n"
+        "## Criteria\n"
+        "| Criterion | Verdict | Commands |\n"
+        "| --- | --- | --- |\n"
+    )
+    if criteria_rows:
+        for item in criteria_rows:
+            if not isinstance(item, dict):
+                continue
+            commands = item.get("commands")
+            command_text = "—"
+            if isinstance(commands, list) and commands:
+                command_text = ", ".join(json.dumps(str(command)) for command in commands)
+            sys.stdout.write(
+                f"| {item.get('label')} | {item.get('verdict')} | {command_text} |\n"
+            )
+    else:
+        sys.stdout.write("| — | unverified | — |\n")
+    next_command = payload.get("next_recommended_command")
+    sys.stdout.write(
+        "\n## Next Recommended Command\n"
+        f"{next_command or 'No unverified criterion has a command.'}\n\n"
+        "## Proofs\n"
+        f"- Collected: {payload.get('proofs_collected')}\n"
+        f"- Last QA: {payload.get('last_qa_timestamp')}\n"
+    )
+    if payload.get("stale"):
+        sys.stdout.write("\nProjection cache is stale; run `mobius projection rebuild`.\n")
 
 
 def _try_fast_store_status(argv: list[str]) -> bool:
@@ -493,6 +655,59 @@ def _canonical_json(payload: dict[str, object]) -> str:
 
 def _escape_like(value: str) -> str:
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _object_dict(value: object) -> dict[str, object]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _text(value: object, default: str) -> str:
+    if value is None:
+        return default
+    text = str(value).strip()
+    return text or default
+
+
+def _owner_text(value: object) -> str:
+    if isinstance(value, list):
+        text = ", ".join(str(item).strip() for item in value if str(item).strip())
+        return text or "(none)"
+    return _text(value, "(none)")
+
+
+def _int(value: object) -> int:
+    if isinstance(value, int):
+        return value
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _fast_duration(latest_run: dict[str, object]) -> str:
+    started_at = _text(latest_run.get("started_at"), "")
+    ended_at = _text(latest_run.get("ended_at"), "") or _text(
+        latest_run.get("last_event_at"), ""
+    )
+    if not started_at:
+        return "unknown"
+    if not ended_at:
+        return "running"
+    try:
+        started = datetime.fromisoformat(started_at.replace("Z", "+00:00")).astimezone(UTC)
+        ended = datetime.fromisoformat(ended_at.replace("Z", "+00:00")).astimezone(UTC)
+    except ValueError:
+        return "unknown"
+    seconds = max(0.0, (ended - started).total_seconds())
+    if seconds < 1:
+        return f"{seconds:.1f}s"
+    if seconds < 60:
+        return f"{seconds:.0f}s"
+    minutes, remaining = divmod(int(seconds), 60)
+    if minutes < 60:
+        return f"{minutes}m {remaining}s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}h {minutes}m"
 
 
 def _iso8601_utc_now() -> str:

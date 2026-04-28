@@ -37,6 +37,7 @@ def test_handler_modules_are_not_imported_for_help() -> None:
         "mobius.cli.commands.ac_tree",
         "mobius.cli.commands.qa",
         "mobius.cli.commands.handoff",
+        "mobius.cli.commands.hud",
         "mobius.cli.commands.cancel",
         "mobius.cli.commands.evolve",
         "mobius.cli.commands.lineage",

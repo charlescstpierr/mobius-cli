@@ -212,6 +212,196 @@ def test_fast_store_status_falls_back_when_migrations_row_missing(
     assert cli_module._try_fast_store_status(["status"]) is False
 
 
+# ---------------- _try_fast_hud ----------------
+
+
+def test_fast_hud_returns_default_payload_when_store_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _set_home(monkeypatch, tmp_path / "missing")
+
+    handled = cli_module._try_fast_hud(["hud", "--json"])
+
+    assert handled is True
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["spec"]["goal"] == "(unknown)"
+    assert payload["latest_run"]["duration"] == "unknown"
+    assert payload["criteria"] == []
+
+
+def test_fast_hud_outputs_projection_summary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    home = tmp_path / "hud"
+    with EventStore(home / "events.db") as store:
+        store.append_event(
+            "seed_hud",
+            "seed.completed",
+            {
+                "goal": "Fast HUD.",
+                "owner": ["alice", "bob"],
+                "success_criteria": ["C1 - Done.", "C2 - Next."],
+                "verification_commands": [
+                    {"command": "true", "criterion_ref": "C1"},
+                    {"command": "python -m pytest", "criterion_ref": "C2"},
+                ],
+            },
+        )
+        store.append_event("run_hud", "run.started", {"goal": "Fast HUD.", "title": "Fast HUD"})
+        store.append_event(
+            "run_hud",
+            "qa.proof_collected",
+            {"command": "true", "criterion_ref": "C1", "exit_code": 0, "timed_out": False},
+        )
+        store.append_event("run_hud", "spec.grade_assigned", {"grade": "silver"})
+    _set_home(monkeypatch, home)
+
+    handled = cli_module._try_fast_hud(["hud"])
+
+    assert handled is True
+    out = capsys.readouterr().out
+    assert "Fast HUD." in out
+    assert "alice, bob" in out
+    assert "silver" in out
+    assert "C1 - Done. | pass" in out
+    assert "python -m pytest" in out
+    assert "- Collected: 1" in out
+
+
+def test_fast_hud_supports_global_json_flag(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    home = tmp_path / "hud-json"
+    with EventStore(home / "events.db") as store:
+        store.append_event(
+            "seed_hud",
+            "seed.completed",
+            {"goal": "JSON HUD.", "success_criteria": ["C1"]},
+        )
+        store.append_event("seed_hud", "spec.grade_assigned", {"grade": "bronze"})
+    _set_home(monkeypatch, home)
+
+    handled = cli_module._try_fast_hud(["--json", "hud"])
+
+    assert handled is True
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["spec"]["goal"] == "JSON HUD."
+    assert payload["spec"]["grade"] == "bronze"
+
+
+def test_fast_hud_falls_back_for_unknown_args(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _set_home(monkeypatch, tmp_path / "hud")
+    assert cli_module._try_fast_hud(["hud", "--bad"]) is False
+    assert cli_module._try_fast_hud(["hud", "--help"]) is False
+    assert cli_module._try_fast_hud(["status"]) is False
+
+
+def test_fast_hud_falls_back_for_invalid_sqlite(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "bad-hud"
+    home.mkdir()
+    (home / "events.db").write_text("not sqlite", encoding="utf-8")
+    _set_home(monkeypatch, home)
+    assert cli_module._try_fast_hud(["hud"]) is False
+
+
+def test_fast_hud_helper_branches() -> None:
+    stale_payload = cli_module._fast_hud_payload(
+        {
+            "stale": True,
+            "criteria_summary": {"by_criterion": {"C1": "unverified"}},
+            "latest_run": {
+                "id": "run",
+                "title": "Run",
+                "status": "completed",
+                "started_at": "2026-04-28T00:00:00.000000Z",
+                "ended_at": "2026-04-28T01:02:00.000000Z",
+            },
+        }
+    )
+
+    assert stale_payload["stale"] is True
+    assert stale_payload["latest_run"]["duration"] == "1h 2m"
+    assert stale_payload["next_recommended_command"] is None
+    assert cli_module._fast_duration({"started_at": "not-a-date", "ended_at": "also-bad"}) == (
+        "unknown"
+    )
+    assert cli_module._fast_duration(
+        {
+            "started_at": "2026-04-28T00:00:00.000000Z",
+            "ended_at": "2026-04-28T00:00:00.100000Z",
+        }
+    ) == "0.1s"
+    assert cli_module._fast_duration(
+        {
+            "started_at": "2026-04-28T00:00:00.000000Z",
+            "ended_at": "2026-04-28T00:00:42.000000Z",
+        }
+    ) == "42s"
+    assert cli_module._fast_duration(
+        {
+            "started_at": "2026-04-28T00:00:00.000000Z",
+            "ended_at": "2026-04-28T00:02:03.000000Z",
+        }
+    ) == "2m 3s"
+    criteria_payload = cli_module._fast_hud_payload(
+        {"criteria": ["bad", {"id": "C9", "commands": "bad"}]}
+    )
+    assert criteria_payload["criteria"] == [
+        {"id": "C9", "label": "C9", "verdict": "unverified", "commands": []}
+    ]
+    assert cli_module._int("7") == 7
+    assert cli_module._int("bad") == 0
+
+
+def test_write_fast_hud_empty_and_stale_paths(capsys: pytest.CaptureFixture[str]) -> None:
+    cli_module._write_fast_hud(
+        {
+            "spec": {"goal": "G", "owner": "O", "grade": "bronze"},
+            "latest_run": {"id": "R", "title": "T", "status": "running", "duration": "running"},
+            "criteria": [],
+            "next_recommended_command": None,
+            "proofs_collected": 0,
+            "last_qa_timestamp": "(none)",
+            "stale": True,
+        }
+    )
+
+    out = capsys.readouterr().out
+    assert "| — | unverified | — |" in out
+    assert "Projection cache is stale" in out
+
+
+def test_main_dispatches_hud_fast_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _set_home(monkeypatch, tmp_path / "missing")
+    monkeypatch.setattr(sys, "argv", ["mobius", "hud"])
+    buffer = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", buffer)
+
+    _invoke_fast_main()
+
+    assert "# Mobius HUD" in buffer.getvalue()
+
+
+def test_fast_status_sqlite_error_exits_1(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / "events.db").write_text("bad sqlite", encoding="utf-8")
+    _set_home(monkeypatch, home)
+
+    with pytest.raises(SystemExit) as exc:
+        cli_module._try_fast_status(["status", "run"])
+
+    assert exc.value.code == 1
+
+
 # ---------------- main() and dispatch ----------------
 
 

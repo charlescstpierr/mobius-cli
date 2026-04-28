@@ -332,6 +332,22 @@ def handoff_command(
     )
 
 
+@app.command(name="hud", help="Show the projection-backed Mobius dashboard.")
+def hud_command(
+    ctx: typer.Context,
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Emit machine-readable JSON.",
+        ),
+    ] = False,
+) -> None:
+    """Render the HUD from the projection cache without replaying events."""
+    module = importlib.import_module("mobius.cli.commands.hud")
+    cast(Any, module).run(ctx.obj, json_output=json_output)
+
+
 @app.command(name="run", help="Execute a Mobius seed spec.")
 def run_command(
     ctx: typer.Context,

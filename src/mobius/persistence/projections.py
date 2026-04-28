@@ -54,6 +54,7 @@ class QAProjectionUpdater:
             exit_code = payload.get("exit_code")
             verdict = "pass" if exit_code == 0 and not payload.get("timed_out") else "fail"
             criteria_summary["by_criterion"][criterion_ref] = verdict
+            _update_projected_criterion(snapshot, criterion_ref, verdict, payload)
             criteria_summary["passed"] = sum(
                 1 for value in criteria_summary["by_criterion"].values() if value == "pass"
             )
@@ -94,6 +95,16 @@ class SpecProjectionUpdater:
                 current_spec["goal"] = payload.get("goal")
                 if payload.get("owner") is not None:
                     current_spec["owner"] = payload.get("owner")
+                success_criteria = payload.get("success_criteria")
+                verification_commands = payload.get("verification_commands")
+                if isinstance(success_criteria, list):
+                    current_spec["success_criteria"] = [str(item) for item in success_criteria]
+                if isinstance(verification_commands, list):
+                    current_spec["verification_commands"] = [
+                        dict(item) for item in verification_commands if isinstance(item, dict)
+                    ]
+                if event.type == "seed.completed":
+                    _initialize_projected_criteria(snapshot, payload)
                 snapshot["current_spec"] = current_spec
         return _mark_fresh(snapshot, event)
 
@@ -399,6 +410,126 @@ def _criteria_summary(snapshot: Mapping[str, Any]) -> dict[str, Any]:
         "unverified": int(summary.get("unverified", 0)),
         "by_criterion": {str(key): str(value) for key, value in by_criterion.items()},
     }
+
+
+def _initialize_projected_criteria(snapshot: dict[str, Any], payload: Mapping[str, Any]) -> None:
+    success_criteria = payload.get("success_criteria")
+    if not isinstance(success_criteria, list):
+        return
+    commands = [
+        dict(item)
+        for item in payload.get("verification_commands", [])
+        if isinstance(item, dict)
+    ]
+    projected: list[dict[str, Any]] = []
+    by_criterion: dict[str, str] = {}
+    for index, raw_criterion in enumerate(success_criteria, start=1):
+        criterion = str(raw_criterion)
+        refs = _criterion_reference_keys(criterion, index)
+        criterion_commands = [
+            str(command.get("command", "")).strip()
+            for command in commands
+            if _command_matches_criterion(command, refs)
+            and str(command.get("command", "")).strip()
+        ]
+        criterion_id = _display_ref(criterion, index)
+        projected.append(
+            {
+                "id": criterion_id,
+                "label": criterion,
+                "verdict": "unverified",
+                "commands": criterion_commands,
+            }
+        )
+        by_criterion[criterion_id] = "unverified"
+    snapshot["criteria"] = projected
+    snapshot["criteria_summary"] = {
+        "passed": 0,
+        "failed": 0,
+        "unverified": len(projected),
+        "by_criterion": by_criterion,
+    }
+
+
+def _update_projected_criterion(
+    snapshot: dict[str, Any],
+    criterion_ref: str,
+    verdict: str,
+    payload: Mapping[str, Any],
+) -> None:
+    criteria = _criteria_list(snapshot)
+    normalized_ref = _normalize_ref(criterion_ref)
+    command = str(payload.get("command", "")).strip()
+    matched = False
+    for criterion in criteria:
+        refs = _criterion_reference_keys(str(criterion.get("label", "")), 0)
+        refs.add(_normalize_ref(criterion.get("id")))
+        if normalized_ref not in refs:
+            continue
+        criterion["verdict"] = verdict
+        criterion["last_proof_at_command"] = command
+        matched = True
+        break
+    if not matched:
+        criteria.append(
+            {
+                "id": criterion_ref,
+                "label": criterion_ref,
+                "verdict": verdict,
+                "commands": [command] if command else [],
+            }
+        )
+    snapshot["criteria"] = criteria
+
+
+def _criteria_list(snapshot: Mapping[str, Any]) -> list[dict[str, Any]]:
+    raw = snapshot.get("criteria")
+    if not isinstance(raw, list):
+        return []
+    criteria: list[dict[str, Any]] = []
+    for item in raw:
+        if isinstance(item, dict):
+            criteria.append(dict(item))
+    return criteria
+
+
+def _command_matches_criterion(command: Mapping[str, Any], references: set[str]) -> bool:
+    raw_ref = command.get("criterion_ref")
+    if raw_ref is None:
+        raw_ref = command.get("criterion_refs")
+    if raw_ref is None:
+        raw_ref = command.get("criteria")
+    if isinstance(raw_ref, list):
+        return any(_normalize_ref(item) in references for item in raw_ref)
+    return _normalize_ref(raw_ref) in references
+
+
+def _criterion_reference_keys(criterion: str, index: int) -> set[str]:
+    stripped = criterion.strip()
+    keys = {
+        str(index) if index else "",
+        f"criterion-{index}" if index else "",
+        f"criterion_{index}" if index else "",
+        f"C{index}" if index else "",
+        f"c{index}" if index else "",
+        stripped,
+    }
+    first_token = stripped.split(maxsplit=1)[0] if stripped else ""
+    if first_token:
+        keys.add(first_token.rstrip(":.-—"))
+    return {_normalize_ref(key) for key in keys if key}
+
+
+def _display_ref(criterion: str, index: int) -> str:
+    first_token = criterion.strip().split(maxsplit=1)[0] if criterion.strip() else ""
+    candidate = first_token.rstrip(":.-—")
+    if candidate:
+        return candidate
+    return f"C{index}"
+
+
+def _normalize_ref(value: object) -> str:
+    return " ".join(str(value).strip().split()).lower()
 
 
 def _canonical_json(payload: Mapping[str, Any]) -> str:
