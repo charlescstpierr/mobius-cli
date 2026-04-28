@@ -28,7 +28,7 @@ def test_prepare_run_validates_spec_and_writes_metadata(tmp_path: Path) -> None:
 
     prepared = prepare_run(paths, spec)
 
-    assert prepared.run_id.startswith("run_")
+    assert prepared.run_id.startswith("run_execute-a-run-from-a-validated-spec_")
     assert prepared.spec.goal == "Execute a run from a validated spec."
     assert prepared.paths.metadata_file.exists()
     assert str(spec.resolve()) in prepared.paths.metadata_file.read_text(encoding="utf-8")

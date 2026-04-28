@@ -8,7 +8,6 @@ import signal
 import subprocess
 import sys
 import time
-import uuid
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,6 +16,7 @@ from typing import NoReturn
 from mobius.cli.main import ExitCode
 from mobius.config import MobiusPaths
 from mobius.persistence.event_store import EventStore
+from mobius.workflow.ids import readable_session_id
 from mobius.workflow.seed import SeedSpec, SeedSpecValidationError, load_seed_spec
 
 
@@ -44,7 +44,7 @@ def prepare_run(paths: MobiusPaths, spec_path: Path) -> PreparedRun:
     """Validate a spec and create the run metadata directory."""
     resolved_spec_path = spec_path.expanduser().resolve()
     spec = load_seed_spec(resolved_spec_path)
-    run_id = f"run_{uuid.uuid4().hex[:12]}"
+    run_id = readable_session_id("run", spec.goal)
     run_paths = get_run_paths(paths, run_id)
     run_paths.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(run_paths.directory, 0o700)

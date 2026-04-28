@@ -91,7 +91,7 @@ def test_seed_handler_persists_three_events_and_completed_session(
 
     payload = json.loads(captured_output["json"][0])
     session_id = payload["session_id"]
-    assert session_id.startswith("seed_")
+    assert session_id.startswith("seed_exercise-seed-command-handler_")
     assert payload["event_count"] == 3
     with EventStore(context.mobius_home / "events.db") as store:
         events = store.read_events(session_id)

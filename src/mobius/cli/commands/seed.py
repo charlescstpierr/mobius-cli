@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import uuid
 from pathlib import Path
 
 import typer
@@ -12,6 +11,7 @@ from mobius.cli import output
 from mobius.cli.main import CliContext, ExitCode
 from mobius.config import get_paths
 from mobius.persistence.event_store import EventStore
+from mobius.workflow.ids import readable_session_id
 from mobius.workflow.seed import SeedSpecValidationError, load_seed_spec
 
 
@@ -43,7 +43,7 @@ def run(
         output.write_error_line(str(exc))
         raise typer.Exit(code=int(ExitCode.VALIDATION)) from exc
 
-    session_id = f"seed_{uuid.uuid4().hex[:12]}"
+    session_id = readable_session_id("seed", spec.goal)
     event_count = 0
     with EventStore(paths.event_store) as store:
         store.create_session(

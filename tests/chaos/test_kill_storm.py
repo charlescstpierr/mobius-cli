@@ -127,6 +127,10 @@ def _create_completed_run(tmp_path: Path, mobius_home: Path) -> str:
 def test_parallel_run_kill_storm_recovers_without_orphans_or_half_written_rows(
     tmp_path: Path,
 ) -> None:
+    # Feature 1.1b investigation: the observed 0 == 10 failure was reproducible
+    # when local uv entry-point scripts pointed at a stale virtualenv. After
+    # refreshing the dev environment, this chaos check passes and should stay
+    # active rather than being skipped as flaky.
     mobius_home = tmp_path / "home"
     spec = tmp_path / "storm.yaml"
     write_long_spec(spec)

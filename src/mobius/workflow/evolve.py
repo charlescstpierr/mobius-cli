@@ -8,7 +8,6 @@ import signal
 import subprocess
 import sys
 import time
-import uuid
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,6 +16,7 @@ from typing import Any, NoReturn
 from mobius.cli.main import ExitCode
 from mobius.config import MobiusPaths
 from mobius.persistence.event_store import EventStore
+from mobius.workflow.ids import readable_session_id
 
 MAX_GENERATIONS = 30
 CONVERGENCE_THRESHOLD = 0.95
@@ -74,7 +74,7 @@ def prepare_evolution(
         if source is None or str(source["runtime"]) != "run":
             raise EvolutionSourceNotFoundError(f"run not found: {source_run_id}")
 
-    evolution_id = f"evo_{uuid.uuid4().hex[:12]}"
+    evolution_id = readable_session_id("evo", source_run_id)
     evolution_paths = get_evolution_paths(paths, evolution_id)
     evolution_paths.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(evolution_paths.directory, 0o700)

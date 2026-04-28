@@ -130,7 +130,7 @@ def test_interview_handler_writes_spec_and_emits_lines(
         output_path=out,
     )
     captured = capsys.readouterr().out
-    assert "session_id=interview_" in captured
+    assert "session_id=interview_build-a-deterministic-interview_" in captured
     assert "ambiguity_score=" in captured
     assert out.exists()
     assert "ambiguity_score" in out.read_text(encoding="utf-8")
@@ -148,7 +148,7 @@ def test_interview_handler_json_output(
         output_path=out,
     )
     payload = json.loads(capsys.readouterr().out)
-    assert payload["session_id"].startswith("interview_")
+    assert payload["session_id"].startswith("interview_build-a-deterministic-interview_")
     assert payload["passed_gate"] is True
 
 
@@ -176,7 +176,7 @@ def test_interview_handler_agent_flags_compose_spec(
         ],
     )
     captured = capsys.readouterr()
-    assert "session_id=interview_" in captured.out
+    assert "session_id=interview_ship-a-next-js-dashboard-with-auth_" in captured.out
     spec_text = out.read_text(encoding="utf-8")
     assert "goal: Ship a Next.js dashboard with auth" in spec_text
     assert "Deploy to Vercel" in spec_text

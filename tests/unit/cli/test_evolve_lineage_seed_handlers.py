@@ -245,7 +245,7 @@ success_criteria:
     seed_command.run(_ctx(tmp_path), str(spec), json_output=True)
     captured = capsys.readouterr().out.strip()
     payload = json.loads(captured)
-    assert payload["session_id"].startswith("seed_")
+    assert payload["session_id"].startswith("seed_seed-handler-unit-test-goal_")
     assert payload["event_count"] == 3
 
 
@@ -266,4 +266,4 @@ success_criteria:
     )
     seed_command.run(_ctx(tmp_path), str(spec))
     out = capsys.readouterr().out.strip()
-    assert out.startswith("seed_")
+    assert out.startswith("seed_seed-handler-plain-id_")

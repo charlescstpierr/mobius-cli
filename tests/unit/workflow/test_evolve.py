@@ -32,7 +32,7 @@ def test_prepare_evolution_caps_generations_and_writes_metadata(tmp_path: Path) 
 
     prepared = prepare_evolution(paths, "run_source", generations=99)
 
-    assert prepared.evolution_id.startswith("evo_")
+    assert prepared.evolution_id.startswith("evo_run-source_")
     assert prepared.source_run_id == "run_source"
     assert prepared.generations == 30
     assert prepared.paths == get_evolution_paths(paths, prepared.evolution_id)

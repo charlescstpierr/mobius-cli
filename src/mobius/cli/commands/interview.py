@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import sys
-import uuid
 from pathlib import Path
 
 import typer
@@ -13,6 +12,7 @@ from mobius.cli import output
 from mobius.cli.main import CliContext, ExitCode
 from mobius.config import get_paths
 from mobius.persistence.event_store import EventStore
+from mobius.workflow.ids import readable_session_id
 from mobius.workflow.interview import (
     AmbiguityGateError,
     InterviewFixture,
@@ -103,7 +103,7 @@ def run(
         output.write_error_line(str(exc))
         raise typer.Exit(code=int(ExitCode.VALIDATION)) from exc
 
-    session_id = f"interview_{uuid.uuid4().hex[:12]}"
+    session_id = readable_session_id("interview", fixture.goal)
     paths = get_paths(context.mobius_home)
     output_path = output_path.expanduser().resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
