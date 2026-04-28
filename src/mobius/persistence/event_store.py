@@ -283,7 +283,7 @@ class EventStore:
         with self.transaction() as connection:
             next_sequence = sequence or self._next_sequence(connection, aggregate_id)
             created_at = iso8601_utc_now()
-            connection.execute(
+            insert_cursor = connection.execute(
                 """
                 INSERT OR IGNORE INTO events(
                     event_id, aggregate_id, sequence, type, payload, created_at
@@ -299,6 +299,7 @@ class EventStore:
                     created_at,
                 ),
             )
+            inserted = insert_cursor.rowcount == 1
             connection.execute(
                 """
                 INSERT INTO aggregates(aggregate_id, type, last_sequence, snapshot, updated_at)
@@ -318,6 +319,14 @@ class EventStore:
                 """,
                 (aggregate_id, next_sequence),
             ).fetchone()
+            if row is not None:
+                from mobius.persistence.projections import project_event_in_transaction
+
+                project_event_in_transaction(
+                    connection,
+                    _event_from_row(row),
+                    inserted=inserted,
+                )
         if row is None:
             msg = "append did not return a persisted event"
             raise RuntimeError(msg)

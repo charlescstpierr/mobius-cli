@@ -45,6 +45,7 @@ def test_handler_modules_are_not_imported_for_help() -> None:
         "mobius.cli.commands.migrate",
         "mobius.cli.commands.smoke",
         "mobius.cli.commands.config",
+        "mobius.cli.commands.projection",
     ]
 
     for module_name in command_modules:

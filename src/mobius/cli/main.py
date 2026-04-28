@@ -836,6 +836,43 @@ def workflow_smoke_command(
 app.add_typer(workflow_app, name="workflow")
 
 
+projection_app = typer.Typer(
+    add_completion=False,
+    context_settings={"help_option_names": ["-h", "--help"]},
+    help="Manage the Mobius projection cache.",
+)
+
+
+@projection_app.command(name="rebuild")
+def projection_rebuild_command(
+    ctx: typer.Context,
+    from_event_id: Annotated[
+        str | None,
+        typer.Option(
+            "--from-event",
+            help="Replay starting from this event_id, inclusive.",
+        ),
+    ] = None,
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Emit machine-readable JSON.",
+        ),
+    ] = False,
+) -> None:
+    """Replay events into the projection cache."""
+    module = importlib.import_module("mobius.cli.commands.projection")
+    cast(Any, module).rebuild(
+        ctx.obj,
+        from_event_id=from_event_id,
+        json_output=json_output,
+    )
+
+
+app.add_typer(projection_app, name="projection")
+
+
 worker_app = typer.Typer(
     add_completion=False,
     context_settings={"help_option_names": ["-h", "--help"]},
