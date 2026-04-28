@@ -68,6 +68,40 @@ def test_status_handler_known_run_markdown(
     assert "completed" in out
 
 
+def test_status_handler_resolves_unique_run_slug_prefix(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], status_command: ModuleType
+) -> None:
+    paths = get_paths(_ctx(tmp_path).mobius_home)
+    paths.state_dir.mkdir(parents=True, exist_ok=True)
+    with EventStore(paths.event_store) as store:
+        store.create_session("abc-def-123", runtime="run", metadata={}, status="completed")
+        store.append_event("abc-def-123", "run.started", {"goal": "Prefix"})
+
+    status_command.run(_ctx(tmp_path), "abc-def")
+    out = capsys.readouterr().out
+    assert "# Run abc-def-123" in out
+
+
+def test_status_handler_rejects_ambiguous_run_slug_prefix(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], status_command: ModuleType
+) -> None:
+    paths = get_paths(_ctx(tmp_path).mobius_home)
+    paths.state_dir.mkdir(parents=True, exist_ok=True)
+    with EventStore(paths.event_store) as store:
+        for run_id in ("abc-def-123", "abc-different-456"):
+            store.create_session(run_id, runtime="run", metadata={}, status="completed")
+            store.append_event(run_id, "run.started", {"goal": run_id})
+
+    with pytest.raises(SystemExit) as exc:
+        status_command.run(_ctx(tmp_path), "abc-")
+
+    assert exc.value.code == int(ExitCode.USAGE)
+    err = capsys.readouterr().err
+    assert "ambiguous run prefix" in err
+    assert "abc-def-123" in err
+    assert "abc-different-456" in err
+
+
 def test_status_handler_follow_requires_run_id(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], status_command: ModuleType
 ) -> None:

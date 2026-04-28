@@ -113,6 +113,46 @@ def test_status_unknown_run_exits_not_found(tmp_path: Path) -> None:
     assert "not found" in result.stderr.lower()
 
 
+def test_status_run_slug_prefix_resolution_and_errors(tmp_path: Path) -> None:
+    mobius_home = tmp_path / "mobius-home"
+    spec = tmp_path / "spec.yaml"
+    write_valid_spec(spec)
+
+    first = run_mobius("run", "--foreground", "--spec", str(spec), mobius_home=mobius_home)
+    assert first.returncode == 0
+    second = run_mobius("run", "--foreground", "--spec", str(spec), mobius_home=mobius_home)
+    assert second.returncode == 0
+
+    connection = sqlite3.connect(mobius_home / "events.db")
+    try:
+        run_ids = [
+            row[0]
+            for row in connection.execute(
+                "SELECT session_id FROM sessions WHERE runtime = 'run' ORDER BY started_at"
+            ).fetchall()
+        ]
+    finally:
+        connection.close()
+
+    assert len(run_ids) == 2
+    unique_prefix = run_ids[0].rsplit("_", 1)[0] + "_" + run_ids[0].rsplit("_", 1)[1][:4]
+    common_prefix = run_ids[0].rsplit("_", 1)[0] + "_"
+
+    resolved = run_mobius("status", unique_prefix, mobius_home=mobius_home)
+    assert resolved.returncode == 0
+    assert f"# Run {run_ids[0]}" in resolved.stdout
+
+    missing = run_mobius("status", "xyz", mobius_home=mobius_home)
+    assert missing.returncode != 0
+    assert "not found" in missing.stderr.lower()
+
+    ambiguous = run_mobius("status", common_prefix, mobius_home=mobius_home)
+    assert ambiguous.returncode != 0
+    assert "ambiguous run prefix" in ambiguous.stderr
+    assert run_ids[0] in ambiguous.stderr
+    assert run_ids[1] in ambiguous.stderr
+
+
 def test_status_follow_streams_deltas_until_terminal_state(tmp_path: Path) -> None:
     mobius_home = tmp_path / "mobius-home"
     spec = tmp_path / "spec.yaml"

@@ -129,7 +129,11 @@ def execute_run(paths: MobiusPaths, run_id: str, *, stream_events: bool) -> int:
                 store,
                 run_id,
                 "run.started",
-                {"spec_path": str(spec_path), "goal": spec.goal},
+                {
+                    "spec_path": str(spec_path),
+                    "goal": spec.goal,
+                    "title": _title_from_goal(spec.goal),
+                },
                 stream_events=stream_events,
             )
             _write_pid(run_paths.pid_file, os.getpid())
@@ -239,6 +243,13 @@ def _append_and_emit(
 ) -> None:
     event = store.append_event(run_id, event_type, payload)
     _emit(stream_events, f"{event.created_at} {event.type} {event.payload}")
+
+
+def _title_from_goal(goal: str) -> str:
+    title = " ".join(goal.split())
+    if len(title) <= 60:
+        return title
+    return title[:60].rstrip()
 
 
 def _emit(stream_events: bool, message: str) -> None:

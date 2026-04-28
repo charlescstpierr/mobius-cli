@@ -182,6 +182,13 @@ def _try_fast_status(argv: list[str]) -> bool:
     if not db_path.exists():
         _raise_fast_not_found(run_id)
 
+    try:
+        with _connect(db_path, read_only=True) as connection:
+            run_id = _fast_resolve_run_id(connection, run_id)
+    except sqlite3.Error as exc:
+        sys.stderr.write(f"status failed: {exc}\n")
+        raise SystemExit(1) from exc
+
     _mark_stale_session_if_needed(mobius_home, db_path, run_id)
     try:
         with _connect(db_path, read_only=True) as connection:
@@ -228,6 +235,32 @@ def _try_fast_status(argv: list[str]) -> bool:
         f"| Last event at | {payload['last_event_at']} |\n"
     )
     return True
+
+
+def _fast_resolve_run_id(connection: sqlite3.Connection, run_id: str) -> str:
+    row = connection.execute(
+        "SELECT session_id FROM sessions WHERE session_id = ?",
+        (run_id,),
+    ).fetchone()
+    if row is not None:
+        return str(row["session_id"])
+    matches = connection.execute(
+        """
+        SELECT aggregate_id
+        FROM events
+        WHERE type = 'run.started'
+          AND aggregate_id LIKE ? ESCAPE '\\'
+        ORDER BY created_at DESC, aggregate_id ASC
+        """,
+        (f"{_escape_like(run_id)}%",),
+    ).fetchall()
+    if not matches:
+        _raise_fast_not_found(run_id)
+    if len(matches) > 1:
+        candidates = ", ".join(str(row["aggregate_id"]) for row in matches)
+        sys.stderr.write(f"ambiguous run prefix: {run_id}; candidates: {candidates}\n")
+        raise SystemExit(2)
+    return str(matches[0]["aggregate_id"])
 
 
 def _mark_stale_session_if_needed(mobius_home: Path, db_path: Path, session_id: str) -> None:
@@ -442,6 +475,10 @@ def _append_event(
 
 def _canonical_json(payload: dict[str, object]) -> str:
     return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+
+def _escape_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _iso8601_utc_now() -> str:

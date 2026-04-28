@@ -62,10 +62,13 @@ def run(
         return
 
     if run_id is not None and not read_only:
+        with EventStore(paths.event_store) as store:
+            run_id = _resolve_run_id(store, run_id)
         mark_stale_session_if_needed(paths, run_id)
 
     with EventStore(paths.event_store, read_only=read_only) as store:
         if run_id is not None:
+            run_id = _resolve_run_id(store, run_id)
             run_payload = _read_run_status(store, run_id)
             if run_payload is None:
                 _raise_not_found(run_id)
@@ -163,6 +166,19 @@ def _read_run_status(store: EventStore, run_id: str) -> RunStatusOutput | None:
         started_at=str(session["started_at"]),
         last_event_at=last_event_at,
     )
+
+
+def _resolve_run_id(store: EventStore, run_id: str) -> str:
+    if _read_run_status(store, run_id) is not None:
+        return run_id
+    matches = store.find_by_slug_prefix(run_id)
+    if not matches:
+        _raise_not_found(run_id)
+    if len(matches) > 1:
+        candidates = ", ".join(event.aggregate_id for event in matches)
+        output.write_error_line(f"ambiguous run prefix: {run_id}; candidates: {candidates}")
+        raise SystemExit(int(ExitCode.USAGE))
+    return matches[0].aggregate_id
 
 
 def _read_events_after_cursor(

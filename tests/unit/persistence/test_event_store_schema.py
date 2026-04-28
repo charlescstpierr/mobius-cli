@@ -220,3 +220,23 @@ def test_integrity_check_returns_ok_after_reopen(tmp_path: Path) -> None:
 
     with EventStore(db_path) as store:
         assert store.integrity_check() == "ok"
+
+
+def test_run_slug_prefix_lookup_and_latest_run(tmp_path: Path) -> None:
+    db_path = tmp_path / "events.db"
+
+    with EventStore(db_path) as store:
+        first = store.append_event("abc-def-123", "run.started", {"goal": "First"})
+        store.append_event("abc-def-123", "run.completed", {"ok": True})
+        second = store.append_event("abc-different-456", "run.started", {"goal": "Second"})
+
+        exact_prefix = store.find_by_slug_prefix("abc-def")
+        ambiguous_prefix = store.find_by_slug_prefix("abc-")
+        latest = store.get_latest_run()
+
+    assert exact_prefix == [first]
+    assert [event.aggregate_id for event in ambiguous_prefix] == [
+        "abc-different-456",
+        "abc-def-123",
+    ]
+    assert latest == second

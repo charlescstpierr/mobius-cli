@@ -1,4 +1,8 @@
-"""SQLite event store with WAL, migrations, and deterministic replay."""
+"""SQLite event store with WAL, migrations, and deterministic replay.
+
+Run events:
+- ``run.started`` may include ``title`` as optional display metadata.
+"""
 
 from __future__ import annotations
 
@@ -366,6 +370,34 @@ class EventStore:
         ).fetchall()
         return [_event_from_row(row) for row in rows]
 
+    def find_by_slug_prefix(self, prefix: str) -> list[EventRecord]:
+        """Return ``run.started`` events whose readable run id starts with ``prefix``."""
+        like_prefix = _escape_like(prefix)
+        rows = self._connection.execute(
+            """
+            SELECT event_id, aggregate_id, sequence, type, payload, created_at
+            FROM events
+            WHERE type = 'run.started'
+              AND aggregate_id LIKE ? ESCAPE '\\'
+            ORDER BY created_at DESC, aggregate_id ASC
+            """,
+            (f"{like_prefix}%",),
+        ).fetchall()
+        return [_event_from_row(row) for row in rows]
+
+    def get_latest_run(self) -> EventRecord | None:
+        """Return the most recent ``run.started`` event, if one exists."""
+        row = self._connection.execute(
+            """
+            SELECT event_id, aggregate_id, sequence, type, payload, created_at
+            FROM events
+            WHERE type = 'run.started'
+            ORDER BY created_at DESC
+            LIMIT 1
+            """
+        ).fetchone()
+        return _event_from_row(row) if row is not None else None
+
     def replay_hash(self, aggregate_id: str) -> str:
         """Return a deterministic SHA-256 hash of an aggregate's event stream."""
         digest = hashlib.sha256()
@@ -413,6 +445,10 @@ class EventStore:
 
 def _canonical_json(payload: Mapping[str, Any]) -> str:
     return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+
+def _escape_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _event_from_row(row: sqlite3.Row) -> EventRecord:
