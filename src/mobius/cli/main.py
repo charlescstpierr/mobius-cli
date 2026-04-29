@@ -118,6 +118,40 @@ for command_name, module_name in COMMAND_MODULES.items():
     )
 
 
+@app.command(name="build", help="Run the v3a Interview Infinie build composer.")
+def build_command(
+    ctx: typer.Context,
+    intent: Annotated[
+        str | None,
+        typer.Argument(help="Product intent to clarify. Omit for interactive composer."),
+    ] = None,
+    interactive: Annotated[
+        bool,
+        typer.Option("--interactive", help="Run with interactive prompts (default mode)."),
+    ] = True,
+    wizard: Annotated[
+        bool,
+        typer.Option(
+            "--wizard",
+            help="Auto-proceed through Phase 1 using deterministic answers.",
+        ),
+    ] = False,
+    agent: Annotated[
+        bool,
+        typer.Option("--agent", help="Emit JSON suitable for coding-agent orchestration."),
+    ] = False,
+) -> None:
+    """Run the v3a build command while keeping implementation under mobius.v3a."""
+    module = importlib.import_module("mobius.v3a.cli.commands")
+    cast(Any, module).run_build(
+        ctx.obj,
+        intent=intent,
+        interactive=interactive,
+        wizard=wizard,
+        agent=agent,
+    )
+
+
 @app.command(name="init", help="Scaffold a new Mobius workspace at PATH.")
 def init_command(
     ctx: typer.Context,

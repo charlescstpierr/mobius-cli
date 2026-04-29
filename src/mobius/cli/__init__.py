@@ -89,6 +89,7 @@ Options:
   -h, --help Show this message and exit.
 
 Commands:
+  build      Run the v3a Interview Infinie build composer.
   init       Scaffold a new Mobius workspace at PATH.
   interview  Run the project interview and produce a spec.
   seed       Create a seed session from a project spec or interview session.
