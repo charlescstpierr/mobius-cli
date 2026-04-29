@@ -30,7 +30,13 @@ def test_full_build_walkthrough_announces_all_four_phases(tmp_path: Path) -> Non
     workspace = tmp_path / "workspace"
     workspace.mkdir()
 
-    result = run_mobius("build", "tiny TODO CLI", cwd=workspace, mobius_home=tmp_path / "home")
+    result = run_mobius(
+        "build",
+        "tiny TODO CLI",
+        "--auto-top-up",
+        cwd=workspace,
+        mobius_home=tmp_path / "home",
+    )
 
     assert result.returncode == 0, result.stderr
     assert "[Phase 1/4 complete — Interview]" in result.stdout
@@ -48,6 +54,7 @@ def test_agent_mode_returns_json_for_each_completed_phase(tmp_path: Path) -> Non
         "build",
         "tiny TODO CLI",
         "--agent",
+        "--auto-top-up",
         cwd=workspace,
         mobius_home=tmp_path / "home",
     )

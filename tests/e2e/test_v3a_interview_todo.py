@@ -36,6 +36,7 @@ def test_todo_cli_fixture_converges_without_deadlock(tmp_path: Path) -> None:
         "build",
         "tiny TODO CLI",
         "--agent",
+        "--auto-top-up",
         mobius_home=tmp_path / "home",
         cwd=workspace,
     )

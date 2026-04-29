@@ -34,6 +34,7 @@ def test_build_phase_two_seeds_spec_yaml_that_passes_bronze(tmp_path: Path) -> N
         "build",
         "tiny TODO CLI",
         "--agent",
+        "--auto-top-up",
         cwd=workspace,
         mobius_home=tmp_path / "home",
     )
@@ -60,6 +61,7 @@ def test_build_phase_two_is_idempotent_for_same_input_except_generated_ids(
         "build",
         "tiny TODO CLI",
         "--agent",
+        "--auto-top-up",
         cwd=workspace,
         mobius_home=tmp_path / "home",
     )
@@ -70,6 +72,7 @@ def test_build_phase_two_is_idempotent_for_same_input_except_generated_ids(
         "build",
         "tiny TODO CLI",
         "--agent",
+        "--auto-top-up",
         cwd=workspace,
         mobius_home=tmp_path / "home",
     )

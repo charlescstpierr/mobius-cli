@@ -144,6 +144,18 @@ def build_command(
         bool,
         typer.Option("--resume", help="Resume from the next incomplete build phase."),
     ] = False,
+    force_immature: Annotated[
+        bool,
+        typer.Option("--force-immature", help="Override the Phase 3 maturity gate."),
+    ] = False,
+    auto_top_up: Annotated[
+        bool,
+        typer.Option("--auto-top-up", help="Deterministically top up spec maturity."),
+    ] = False,
+    override_reason: Annotated[
+        str | None,
+        typer.Option("--override-reason", help="Reason recorded with --force-immature."),
+    ] = None,
 ) -> None:
     """Run the v3a build command while keeping implementation under mobius.v3a."""
     module = importlib.import_module("mobius.v3a.cli.commands")
@@ -154,7 +166,27 @@ def build_command(
         wizard=wizard,
         agent=agent,
         resume=resume,
+        force_immature=force_immature,
+        auto_top_up=auto_top_up,
+        override_reason=override_reason,
     )
+
+
+@app.command(name="maturity", help="Inspect the v3a deterministic maturity score.")
+def maturity_command(
+    ctx: typer.Context,
+    spec: Annotated[
+        Path,
+        typer.Argument(help="Spec file to inspect."),
+    ] = Path("spec.yaml"),
+    json_output: Annotated[
+        bool,
+        typer.Option("--json", help="Emit machine-readable JSON."),
+    ] = False,
+) -> None:
+    """Run the read-only v3a maturity inspection command."""
+    module = importlib.import_module("mobius.v3a.cli.commands")
+    cast(Any, module).run_maturity(ctx.obj, spec=spec, json_output=json_output)
 
 
 @app.command(name="init", help="Scaffold a new Mobius workspace at PATH.")

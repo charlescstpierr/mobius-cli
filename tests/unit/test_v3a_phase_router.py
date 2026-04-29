@@ -27,11 +27,28 @@ def test_phase_router_accepts_universal_keystrokes() -> None:
     assert parse_router_command(":why") is not None
 
 
+def test_phase_router_rejects_invalid_or_empty_commands() -> None:
+    assert parse_router_command("") is None
+    assert parse_router_command(":back many") is None
+    assert parse_router_command(":back 0") is None
+    assert parse_router_command(":unknown") is None
+
+
 def test_phase_router_back_count_moves_to_prior_phase() -> None:
     command = parse_router_command(":back 2")
     assert command is not None
 
     assert transition_from("scoring", command) == "seed"
+
+
+def test_phase_router_stop_and_explain_transitions() -> None:
+    stop = parse_router_command(":stop")
+    explain = parse_router_command(":explain")
+    assert stop is not None
+    assert explain is not None
+
+    assert transition_from("maturity", stop) is None
+    assert transition_from("maturity", explain) == "maturity"
 
 
 def test_narrative_line_contains_required_phase_marker() -> None:

@@ -28,6 +28,31 @@ def run_mobius(*args: str, cwd: Path, mobius_home: Path) -> subprocess.Completed
 
 
 def seed_completed_phases(workspace: Path, *phases: str) -> None:
+    (workspace / "spec.yaml").write_text(
+        "\n".join(
+            [
+                "spec_version: 2",
+                "project_type: greenfield",
+                "goal: Ship a deterministic tiny TODO CLI.",
+                "constraints:",
+                "  - deterministic TODO behavior",
+                "success_criteria:",
+                "  - Happy path: user creates a TODO item.",
+                "  - Edge case: invalid TODO input reports an error.",
+                "verification_commands:",
+                "  - command: uv run pytest -q",
+                "    criterion_ref: 1",
+                "    timeout_s: 60",
+                "    shell: true",
+                "  - command: uv run pytest -q",
+                "    criterion_ref: 2",
+                "    timeout_s: 60",
+                "    shell: true",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     event_store_path = workspace / ".mobius" / "build" / "events.db"
     with EventStore(event_store_path) as store:
         for index, phase in enumerate(phases, start=1):

@@ -37,6 +37,18 @@ def register(app: typer.Typer) -> None:
             bool,
             typer.Option("--resume", help="Resume from the next incomplete build phase."),
         ] = False,
+        force_immature: Annotated[
+            bool,
+            typer.Option("--force-immature", help="Override the Phase 3 maturity gate."),
+        ] = False,
+        auto_top_up: Annotated[
+            bool,
+            typer.Option("--auto-top-up", help="Deterministically top up spec maturity."),
+        ] = False,
+        override_reason: Annotated[
+            str | None,
+            typer.Option("--override-reason", help="Reason recorded with --force-immature."),
+        ] = None,
     ) -> None:
         run_build(
             ctx.obj,
@@ -45,6 +57,9 @@ def register(app: typer.Typer) -> None:
             wizard=wizard,
             agent=agent,
             resume=resume,
+            force_immature=force_immature,
+            auto_top_up=auto_top_up,
+            override_reason=override_reason,
         )
 
 
@@ -56,12 +71,21 @@ def run_build(
     wizard: bool = False,
     agent: bool = False,
     resume: bool = False,
+    force_immature: bool = False,
+    auto_top_up: bool = False,
+    override_reason: str | None = None,
 ) -> None:
     """Execute the v3a four-phase build router."""
     from mobius.persistence.event_store import EventStore
     from mobius.v3a import load_runtime_config
     from mobius.v3a.interview.runner import run_interview
     from mobius.v3a.interview.scribe import run_seed_handoff
+    from mobius.v3a.maturity.scorer import (
+        MaturityGateError,
+        render_report,
+        score_spec,
+        top_up_spec_to_threshold,
+    )
     from mobius.v3a.phase_router.resume import ResumeUsageError, latest_resume_point
     from mobius.v3a.phase_router.router import (
         BuildLockError,
@@ -92,6 +116,7 @@ def run_build(
 
     importlib.import_module("mobius.v3a.projections.interview_projection")
     importlib.import_module("mobius.v3a.projections.phase_projection")
+    importlib.import_module("mobius.v3a.projections.audit_projection")
 
     artifacts: dict[str, Any] = {"intent": resolved_intent, "run_id": run_id}
     try:
@@ -197,15 +222,50 @@ def run_build(
                 )
 
             def maturity_phase(_phase: Any) -> PhaseResult:
+                spec_path = Path(str(artifacts.get("spec_yaml") or config.workspace / "spec.yaml"))
+                if auto_top_up:
+                    top_up = top_up_spec_to_threshold(spec_path)
+                    report = top_up.after
+                    artifacts.update(
+                        {
+                            "maturity_top_up_questions": top_up.questions_asked,
+                            "maturity_score_before_top_up": top_up.before.score,
+                        }
+                    )
+                else:
+                    report = score_spec(spec_path)
+                report_path = run_dir / "maturity-report.md"
+                report_path.parent.mkdir(parents=True, exist_ok=True)
+                report_path.write_text(render_report(report), encoding="utf-8")
                 artifacts.update(
                     {
-                        "maturity_status": "pending_f05",
-                        "maturity_report": str(run_dir / "maturity-report.md"),
+                        "maturity_status": "passed" if report.passed else "blocked",
+                        "maturity_score": report.score,
+                        "maturity_breakdown": dict(report.breakdown),
+                        "maturity_report": str(report_path),
                     }
                 )
+                if not report.passed:
+                    if not force_immature:
+                        raise MaturityGateError(report)
+                    reason = _override_reason(override_reason)
+                    override_payload = {
+                        "reason": reason,
+                        "maturity_score": report.score,
+                        "threshold": 0.8,
+                        "spec_yaml": str(spec_path),
+                    }
+                    store.append_event(run_id, "human.overrode", override_payload)
+                    store.append_event(run_id, "spec.maturity_overridden", override_payload)
+                    artifacts["maturity_status"] = "overridden"
+                    artifacts["maturity_override_reason"] = reason
                 return PhaseResult(
-                    summary="Reserved maturity gate output for F05 implementation.",
+                    summary=(
+                        f"Maturity {report.score:.2f} — "
+                        f"{artifacts['maturity_status']}."
+                    ),
                     payload=dict(artifacts),
+                    ambiguity_score=report.score,
                 )
 
             def scoring_phase(_phase: Any) -> PhaseResult:
@@ -241,6 +301,10 @@ def run_build(
         raise typer.Exit(code=2) from exc
     except BuildLockError as exc:
         raise typer.Exit(code=6) from exc
+    except MaturityGateError as exc:
+        typer.echo(str(exc), err=True)
+        typer.echo(render_report(exc.report), err=True)
+        raise typer.Exit(code=1) from exc
 
 
 def _mode(*, interactive: bool, wizard: bool, agent: bool) -> str:
@@ -251,3 +315,27 @@ def _mode(*, interactive: bool, wizard: bool, agent: bool) -> str:
     if interactive:
         return "interactive"
     return "interactive"
+
+
+def _override_reason(reason: str | None) -> str:
+    if reason is not None and reason.strip():
+        return reason.strip()
+    import sys
+
+    if sys.stdin.isatty():
+        return str(typer.prompt("Why override the maturity gate?")).strip()
+    return "non-interactive --force-immature override"
+
+
+def run_maturity(context: Any, *, spec: Path, json_output: bool = False) -> None:
+    """Read-only standalone maturity inspection command."""
+    from mobius.v3a.maturity.scorer import render_report, score_spec
+
+    _ = context
+    report = score_spec(spec)
+    if json_output:
+        import json
+
+        typer.echo(json.dumps(report.to_dict(), sort_keys=True))
+        return
+    typer.echo(render_report(report))

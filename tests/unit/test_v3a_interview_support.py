@@ -141,6 +141,7 @@ def test_run_build_agent_mode_writes_json_payload(
         interactive=False,
         wizard=False,
         agent=True,
+        auto_top_up=True,
     )
 
     payload = _payload_for_phase(capsys.readouterr().out, "seed")
@@ -166,6 +167,7 @@ def test_run_build_non_agent_output_includes_seed_and_backup_paths(
         interactive=False,
         wizard=False,
         agent=False,
+        auto_top_up=True,
     )
 
     output = capsys.readouterr().out
