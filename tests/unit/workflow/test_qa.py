@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 
 from mobius.persistence.event_store import EventStore
+from mobius.workflow import qa as qa_module
 from mobius.workflow.qa import Verdict, assign_silver_grade, evaluate_run_qa
 from mobius.workflow.seed import load_seed_spec
 
@@ -302,3 +303,39 @@ def test_criterion_without_verification_command_is_unverified(tmp_path: Path) ->
     criterion = next(result for result in report.results if result.id == "criterion_1")
     assert criterion.verdict == Verdict.UNVERIFIED
     assert criterion.passed is False
+
+
+def test_malformed_verification_command_is_reported_as_fail(tmp_path: Path) -> None:
+    spec = tmp_path / "spec.yaml"
+    spec.write_text(
+        """
+project_type: greenfield
+goal: Report malformed verification commands.
+constraints:
+  - Keep verification local.
+success_criteria:
+  - C1
+verification_commands:
+  - command: "echo hi"
+    criterion_ref: C1
+    timeout_s: not-a-number
+""".strip(),
+        encoding="utf-8",
+    )
+    store_path = tmp_path / "events.db"
+    create_completed_run(store_path, "run_malformed", spec)
+
+    report = evaluate_run_qa(store_path, "run_malformed")
+
+    assert report is not None
+    criterion = next(result for result in report.results if result.id == "criterion_1")
+    assert criterion.verdict == Verdict.FAIL
+    assert "malformed verification_command" in criterion.detail
+
+
+def test_criterion_reference_matching_accepts_lists_and_first_tokens() -> None:
+    references = qa_module._criterion_reference_keys("B12 - Works.", 12)
+
+    assert qa_module._command_matches_criterion({"criterion_refs": ["B12"]}, references)
+    assert qa_module._command_matches_criterion({"criteria": ["criterion-12"]}, references)
+    assert not qa_module._command_matches_criterion({"criterion_ref": "other"}, references)

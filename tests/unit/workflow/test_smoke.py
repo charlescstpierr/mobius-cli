@@ -111,3 +111,70 @@ def test_run_smoke_records_timeout(tmp_path: Path, monkeypatch) -> None:
     assert report.steps[0].name == "init"
     assert report.steps[0].exit_code == 124
     assert "timed out" in report.steps[0].detail
+
+
+def test_run_smoke_reports_missing_run_id_and_keeps_workspace(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    workspace = tmp_path / "mobius-smoke-fixed"
+
+    monkeypatch.setattr(smoke.tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(smoke.uuid, "uuid4", lambda: type("Uuid", (), {"hex": "fixed"})())
+
+    def fake_run_command(
+        command: Sequence[str],
+        *,
+        cwd: Path,
+        env: dict[str, str],
+    ) -> smoke._CommandResult:
+        if command[1] == "init":
+            workspace.mkdir(parents=True, exist_ok=True)
+        return smoke._CommandResult(exit_code=0, stdout="", stderr="ok\n")
+
+    monkeypatch.setattr(smoke, "_run_command", fake_run_command)
+
+    report = smoke.run_smoke(keep_workspace=True)
+
+    assert report.passed is False
+    assert workspace.exists()
+    assert report.steps[-1].name == "resolve_run_id"
+    assert report.steps[-1].detail == "no run session found"
+
+
+def test_run_smoke_records_duration_budget_failure(tmp_path: Path, monkeypatch) -> None:
+    workspace = tmp_path / "mobius-smoke-fixed"
+    store_path = workspace / ".mobius" / "events.db"
+    ticks = iter([0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 11.0])
+
+    monkeypatch.setattr(smoke.tempfile, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(smoke.uuid, "uuid4", lambda: type("Uuid", (), {"hex": "fixed"})())
+    monkeypatch.setattr(smoke.time, "monotonic", lambda: next(ticks, 11.0))
+
+    def fake_run_command(
+        command: Sequence[str],
+        *,
+        cwd: Path,
+        env: dict[str, str],
+    ) -> smoke._CommandResult:
+        if command[1] == "init":
+            workspace.mkdir(parents=True, exist_ok=True)
+        if command[1] == "run":
+            with EventStore(store_path) as store:
+                store.create_session("run_smoke", runtime="run", status="completed")
+        return smoke._CommandResult(exit_code=0, stdout="", stderr="")
+
+    monkeypatch.setattr(smoke, "_run_command", fake_run_command)
+
+    report = smoke.run_smoke()
+
+    assert report.passed is False
+    assert report.steps[-1].name == "duration"
+    assert "smoke exceeded 10s budget" in report.steps[-1].detail
+
+
+def test_smoke_detail_prefers_combined_failure_context() -> None:
+    result = smoke._CommandResult(exit_code=2, stdout="first\nlast out\n", stderr="bad\nlast err\n")
+
+    assert smoke._detail(result) == "last err; stdout=last out"
+    assert smoke._detail(smoke._CommandResult(exit_code=0, stdout="", stderr="ok\n")) == "ok"
