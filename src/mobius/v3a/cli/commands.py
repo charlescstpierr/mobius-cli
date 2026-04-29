@@ -45,6 +45,10 @@ def register(app: typer.Typer) -> None:
             bool,
             typer.Option("--auto-top-up", help="Deterministically top up spec maturity."),
         ] = False,
+        skip_tour: Annotated[
+            bool,
+            typer.Option("--skip-tour", help="Bypass the first-run guided tour."),
+        ] = False,
         override_reason: Annotated[
             str | None,
             typer.Option("--override-reason", help="Reason recorded with --force-immature."),
@@ -59,6 +63,7 @@ def register(app: typer.Typer) -> None:
             resume=resume,
             force_immature=force_immature,
             auto_top_up=auto_top_up,
+            skip_tour=skip_tour,
             override_reason=override_reason,
         )
 
@@ -73,6 +78,7 @@ def run_build(
     resume: bool = False,
     force_immature: bool = False,
     auto_top_up: bool = False,
+    skip_tour: bool = False,
     override_reason: str | None = None,
 ) -> None:
     """Execute the v3a four-phase build router."""
@@ -94,6 +100,7 @@ def run_build(
         build_process_lock,
         wizard_countdown_from_env,
     )
+    from mobius.v3a.phase_router.tour import maybe_run_first_run_tour
     from mobius.workflow.ids import readable_session_id
 
     resolved_intent = (intent or "").strip()
@@ -134,6 +141,15 @@ def run_build(
                         "run_id": run_id,
                         "resume_from": resume_point.completed_phase,
                     }
+                )
+            if not resume:
+                import sys
+
+                maybe_run_first_run_tour(
+                    store,
+                    run_id=run_id,
+                    skip_tour=skip_tour,
+                    output=sys.stderr if agent else sys.stdout,
                 )
             store.create_session(
                 run_id,

@@ -152,6 +152,10 @@ def build_command(
         bool,
         typer.Option("--auto-top-up", help="Deterministically top up spec maturity."),
     ] = False,
+    skip_tour: Annotated[
+        bool,
+        typer.Option("--skip-tour", help="Bypass the first-run guided tour."),
+    ] = False,
     override_reason: Annotated[
         str | None,
         typer.Option("--override-reason", help="Reason recorded with --force-immature."),
@@ -168,6 +172,7 @@ def build_command(
         resume=resume,
         force_immature=force_immature,
         auto_top_up=auto_top_up,
+        skip_tour=skip_tour,
         override_reason=override_reason,
     )
 
