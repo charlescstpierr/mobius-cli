@@ -144,7 +144,34 @@ def test_run_build_agent_mode_writes_json_payload(
     )
 
     payload = json.loads(capsys.readouterr().out)
-    assert payload["phase_done"] == "interview"
-    assert payload["next_phase"] == "seed"
+    assert payload["phase_done"] == "seed"
+    assert payload["next_phase"] == "maturity"
     assert Path(payload["transcript"]).exists()
     assert Path(payload["fixture"]).exists()
+    assert Path(payload["spec_yaml"]).exists()
+
+
+def test_run_build_non_agent_output_includes_seed_and_backup_paths(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "spec.yaml").write_text("goal: previous\n", encoding="utf-8")
+    context = SimpleNamespace(mobius_home=tmp_path / "home", json_output=False)
+
+    run_build(
+        context,
+        intent="tiny TODO CLI",
+        interactive=False,
+        wizard=False,
+        agent=False,
+    )
+
+    output = capsys.readouterr().out
+    assert "run_id=build_tiny-todo-cli_" in output
+    assert f"spec_yaml={tmp_path / 'spec.yaml'}" in output
+    assert "backup=" in output
+    backups = list(tmp_path.glob("spec.yaml.pre-build.*.bak"))
+    assert len(backups) == 1
+    assert backups[0].read_text(encoding="utf-8") == "goal: previous\n"

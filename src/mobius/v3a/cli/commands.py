@@ -59,6 +59,7 @@ def run_build(
     from mobius.persistence.event_store import EventStore
     from mobius.v3a import load_runtime_config
     from mobius.v3a.interview.runner import run_interview
+    from mobius.v3a.interview.scribe import run_seed_handoff
     from mobius.workflow.ids import readable_session_id
 
     # Register projection lazily when the command actually runs.
@@ -112,15 +113,31 @@ def run_build(
             "interview.lemma_check_passed",
             {"turn": result.turns, "convergence_exempt": result.socrate_proposed_done},
         )
+        seed_result = run_seed_handoff(
+            fixture_path=result.fixture_path,
+            workspace=config.workspace,
+        )
+        store.append_event(
+            run_id,
+            "phase.completed",
+            {
+                "phase": "seed",
+                "spec_path": str(seed_result.spec_path),
+                "backup_path": str(seed_result.backup_path) if seed_result.backup_path else "",
+                "command": list(seed_result.command),
+            },
+        )
         store.end_session(run_id, status="completed")
 
     payload = {
-        "phase_done": "interview",
-        "next_phase": "seed",
-        "next_command": f"mobius interview --non-interactive --input {result.fixture_path}",
+        "phase_done": "seed",
+        "next_phase": "maturity",
+        "next_command": "mobius build --resume",
         "run_id": run_id,
         "transcript": str(result.transcript_path),
         "fixture": str(result.fixture_path),
+        "spec_yaml": str(seed_result.spec_path),
+        "backup": str(seed_result.backup_path) if seed_result.backup_path else None,
         "turns": result.turns,
         "ambiguity_score": result.ambiguity_score,
         "max_component": result.max_component,
@@ -133,6 +150,9 @@ def run_build(
     output.write_line(f"run_id={run_id}")
     output.write_line(f"transcript={result.transcript_path}")
     output.write_line(f"fixture={result.fixture_path}")
+    output.write_line(f"spec_yaml={seed_result.spec_path}")
+    if seed_result.backup_path is not None:
+        output.write_line(f"backup={seed_result.backup_path}")
     output.write_line(f"ambiguity_score={result.ambiguity_score}")
     output.write_line(f"max_component={result.max_component}")
 
