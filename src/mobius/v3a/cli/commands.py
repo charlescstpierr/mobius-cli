@@ -117,6 +117,7 @@ def run_build(
     importlib.import_module("mobius.v3a.projections.interview_projection")
     importlib.import_module("mobius.v3a.projections.phase_projection")
     importlib.import_module("mobius.v3a.projections.audit_projection")
+    importlib.import_module("mobius.v3a.projections.scoring_projection")
 
     artifacts: dict[str, Any] = {"intent": resolved_intent, "run_id": run_id}
     try:
@@ -269,15 +270,34 @@ def run_build(
                 )
 
             def scoring_phase(_phase: Any) -> PhaseResult:
+                from mobius.v3a.scoring.engine import ScoreInputs, compute_score
+
+                spec_path = Path(str(artifacts.get("spec_yaml") or config.workspace / "spec.yaml"))
+                score_path = run_dir / "score.json"
+                score = compute_score(
+                    ScoreInputs(
+                        spec=spec_path,
+                        run_id=run_id,
+                        ambiguity_score=(
+                            float(artifacts["ambiguity_score"])
+                            if "ambiguity_score" in artifacts
+                            else None
+                        ),
+                        artifacts=dict(artifacts),
+                    ),
+                    event_sink=store,
+                )
+                score.write_json(score_path)
                 artifacts.update(
                     {
-                        "score_status": "pending_f06",
-                        "score_json": str(run_dir / "score.json"),
+                        "score_status": "computed",
+                        "score_out_of_10": score.score_out_of_10,
+                        "score_json": str(score_path),
                     }
                 )
                 store.end_session(run_id, status="completed")
                 return PhaseResult(
-                    summary="Reserved score.json and delivery handoff for F06/F08.",
+                    summary=f"Computed score {score.score_out_of_10}/10 and wrote score.json.",
                     payload=dict(artifacts),
                 )
 
