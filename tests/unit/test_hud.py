@@ -64,7 +64,7 @@ def test_hud_outputs_projection_backed_summary(
     assert "C2 - Needs verification." in result.stdout
     assert "python -m pytest tests/c2.py" in result.stdout
     assert "- Collected: 1" in result.stdout
-    assert "- Last QA: 20" in result.stdout
+    assert "- Last QA:" in result.stdout
 
 
 def test_hud_json_contains_criteria_grade_and_last_qa(

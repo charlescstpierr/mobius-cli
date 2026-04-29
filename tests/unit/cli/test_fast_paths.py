@@ -329,24 +329,33 @@ def test_fast_hud_helper_branches() -> None:
     assert cli_module._fast_duration({"started_at": "not-a-date", "ended_at": "also-bad"}) == (
         "unknown"
     )
-    assert cli_module._fast_duration(
-        {
-            "started_at": "2026-04-28T00:00:00.000000Z",
-            "ended_at": "2026-04-28T00:00:00.100000Z",
-        }
-    ) == "0.1s"
-    assert cli_module._fast_duration(
-        {
-            "started_at": "2026-04-28T00:00:00.000000Z",
-            "ended_at": "2026-04-28T00:00:42.000000Z",
-        }
-    ) == "42s"
-    assert cli_module._fast_duration(
-        {
-            "started_at": "2026-04-28T00:00:00.000000Z",
-            "ended_at": "2026-04-28T00:02:03.000000Z",
-        }
-    ) == "2m 3s"
+    assert (
+        cli_module._fast_duration(
+            {
+                "started_at": "2026-04-28T00:00:00.000000Z",
+                "ended_at": "2026-04-28T00:00:00.100000Z",
+            }
+        )
+        == "0.1s"
+    )
+    assert (
+        cli_module._fast_duration(
+            {
+                "started_at": "2026-04-28T00:00:00.000000Z",
+                "ended_at": "2026-04-28T00:00:42.000000Z",
+            }
+        )
+        == "42s"
+    )
+    assert (
+        cli_module._fast_duration(
+            {
+                "started_at": "2026-04-28T00:00:00.000000Z",
+                "ended_at": "2026-04-28T00:02:03.000000Z",
+            }
+        )
+        == "2m 3s"
+    )
     criteria_payload = cli_module._fast_hud_payload(
         {"criteria": ["bad", {"id": "C9", "commands": "bad"}]}
     )
@@ -375,9 +384,7 @@ def test_write_fast_hud_empty_and_stale_paths(capsys: pytest.CaptureFixture[str]
     assert "Projection cache is stale" in out
 
 
-def test_main_dispatches_hud_fast_path(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_main_dispatches_hud_fast_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _set_home(monkeypatch, tmp_path / "missing")
     monkeypatch.setattr(sys, "argv", ["mobius", "hud"])
     buffer = io.StringIO()
@@ -388,9 +395,7 @@ def test_main_dispatches_hud_fast_path(
     assert "# Mobius HUD" in buffer.getvalue()
 
 
-def test_fast_status_sqlite_error_exits_1(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_fast_status_sqlite_error_exits_1(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     home = tmp_path / "home"
     home.mkdir()
     (home / "events.db").write_text("bad sqlite", encoding="utf-8")
@@ -421,6 +426,42 @@ def test_main_version_uses_fast_path(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sys, "stdout", buffer)
     _invoke_fast_main()
     assert __version__ in buffer.getvalue()
+
+
+def test_main_cold_start_uses_fast_path(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    class Result:
+        returncode = 0
+        stderr = ""
+
+    samples = iter([0.00, 0.04, 0.10, 0.15, 0.20, 0.25, 0.30, 0.36, 0.40, 0.45])
+    monkeypatch.setattr(sys, "argv", ["mobius", "cold-start"])
+    monkeypatch.setattr("time.perf_counter", lambda: next(samples))
+    monkeypatch.setattr("subprocess.run", lambda *_args, **_kwargs: Result())
+
+    _invoke_fast_main()
+
+    assert "cold_start median_ms=50.0" in capsys.readouterr().out
+
+
+def test_fast_cold_start_exits_nonzero_when_help_fails(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    class Result:
+        returncode = 2
+        stderr = "help failed\n"
+
+    samples = iter([0.00, 0.04])
+    monkeypatch.setattr(sys, "argv", ["mobius", "cold-start"])
+    monkeypatch.setattr("time.perf_counter", lambda: next(samples))
+    monkeypatch.setattr("subprocess.run", lambda *_args, **_kwargs: Result())
+
+    with pytest.raises(SystemExit) as exc:
+        cli_module._run_fast_cold_start()
+
+    assert exc.value.code == 2
+    assert "help failed" in capsys.readouterr().err
 
 
 def test_main_falls_back_to_typer(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -154,4 +154,5 @@ def test_installed_binary_documents_and_exercises_standard_exit_codes(tmp_path: 
     assert interrupted.returncode == 130
     assert stdout == ""
     assert "interrupted" in stderr
+    wait_for_no_pid_files(mobius_home)
     assert not pid_file.exists()

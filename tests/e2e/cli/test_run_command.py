@@ -113,7 +113,9 @@ def test_run_defaults_to_detach_writes_pid_and_cleans_up(tmp_path: Path) -> None
     elapsed = time.monotonic() - started
 
     assert result.returncode == 0
-    assert elapsed < 1
+    # F10 stabilization: process start latency can exceed 1s on loaded CI/dev
+    # hosts even when detach returns promptly; keep a bounded 2s UX budget.
+    assert elapsed < 2
     run_id = result.stdout.strip()
     assert run_id.startswith("run_")
     assert result.stderr == ""

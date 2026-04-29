@@ -194,6 +194,39 @@ def maturity_command(
     cast(Any, module).run_maturity(ctx.obj, spec=spec, json_output=json_output)
 
 
+@app.command(name="cold-start", help="Measure `mobius --help` cold-start median over 5 runs.")
+def cold_start_command() -> None:
+    """Measure the public cold-start gate used by v3a quality checks."""
+    import statistics
+    import subprocess
+    import time
+
+    command = [sys.argv[0], "--help"]
+    env = dict(os.environ)
+    env["NO_COLOR"] = "1"
+    samples_ms: list[float] = []
+    for _ in range(5):
+        started = time.perf_counter()
+        result = subprocess.run(
+            command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+            env=env,
+        )
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        if result.returncode != 0:
+            typer.echo(result.stderr, err=True)
+            raise typer.Exit(code=result.returncode)
+        samples_ms.append(elapsed_ms)
+    median_ms = statistics.median(samples_ms)
+    formatted = ", ".join(f"{sample:.1f}" for sample in samples_ms)
+    typer.echo(f"cold_start median_ms={median_ms:.1f} samples_ms=[{formatted}]")
+    if median_ms > 100:
+        raise typer.Exit(code=1)
+
+
 @app.command(name="init", help="Scaffold a new Mobius workspace at PATH.")
 def init_command(
     ctx: typer.Context,

@@ -70,6 +70,9 @@ def _try_fast_path(argv: list[str]) -> bool:
 
         sys.stdout.write(f"mobius {__version__}\n")
         return True
+    if argv == ["cold-start"]:
+        _run_fast_cold_start()
+        return True
     if _try_fast_hud(argv):
         return True
     if _try_fast_store_status(argv):
@@ -106,8 +109,42 @@ Commands:
   config     Show, get, and set Mobius configuration.
   runs       List runs (and optionally evolutions) recorded in the event store.
   projection Manage the Mobius projection cache.
+  cold-start Measure `mobius --help` cold-start median over 5 runs.
 """
     )
+
+
+def _run_fast_cold_start() -> None:
+    """Measure the fast-path ``mobius --help`` median without importing Typer."""
+    import os
+    import statistics
+    import subprocess
+    import time
+
+    command = [sys.argv[0], "--help"]
+    env = dict(os.environ)
+    env["NO_COLOR"] = "1"
+    samples_ms: list[float] = []
+    for _ in range(5):
+        started = time.perf_counter()
+        result = subprocess.run(
+            command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+            env=env,
+        )
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        if result.returncode != 0:
+            sys.stderr.write(result.stderr)
+            raise SystemExit(result.returncode)
+        samples_ms.append(elapsed_ms)
+    median_ms = statistics.median(samples_ms)
+    formatted = ", ".join(f"{sample:.1f}" for sample in samples_ms)
+    sys.stdout.write(f"cold_start median_ms={median_ms:.1f} samples_ms=[{formatted}]\n")
+    if median_ms > 100:
+        raise SystemExit(1)
 
 
 def _try_fast_hud(argv: list[str]) -> bool:
@@ -193,9 +230,7 @@ def _fast_hud_criteria(snapshot: dict[str, object]) -> list[dict[str, object]]:
                 continue
             commands_raw = item.get("commands")
             commands = (
-                [str(command) for command in commands_raw]
-                if isinstance(commands_raw, list)
-                else []
+                [str(command) for command in commands_raw] if isinstance(commands_raw, list) else []
             )
             criteria.append(
                 {
@@ -257,9 +292,7 @@ def _write_fast_hud(payload: dict[str, object]) -> None:
             command_text = "—"
             if isinstance(commands, list) and commands:
                 command_text = ", ".join(json.dumps(str(command)) for command in commands)
-            sys.stdout.write(
-                f"| {item.get('label')} | {item.get('verdict')} | {command_text} |\n"
-            )
+            sys.stdout.write(f"| {item.get('label')} | {item.get('verdict')} | {command_text} |\n")
     else:
         sys.stdout.write("| — | unverified | — |\n")
     next_command = payload.get("next_recommended_command")
@@ -731,9 +764,7 @@ def _fast_duration(latest_run: dict[str, object]) -> str:
     from datetime import UTC, datetime
 
     started_at = _text(latest_run.get("started_at"), "")
-    ended_at = _text(latest_run.get("ended_at"), "") or _text(
-        latest_run.get("last_event_at"), ""
-    )
+    ended_at = _text(latest_run.get("ended_at"), "") or _text(latest_run.get("last_event_at"), "")
     if not started_at:
         return "unknown"
     if not ended_at:
