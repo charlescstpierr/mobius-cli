@@ -15,6 +15,7 @@ from mobius.v3a.scoring.mechanical import (
     compute_mechanical_score,
 )
 from mobius.v3a.scoring.rationale import build_score_rationale
+from mobius.v3a.scoring.recommend import build_score_recommendations
 from mobius.workflow.seed import SeedSpec, load_seed_spec
 
 
@@ -127,7 +128,10 @@ def compute_score(inputs: ScoreInputs, *, event_sink: EventSink | None = None) -
             "mechanical": dict(mechanical.breakdown),
             "llm": dict(llm_result.breakdown),
         },
-        score_recommendations=[],
+        score_recommendations=build_score_recommendations(
+            mechanical=mechanical.breakdown,
+            llm=llm_scores,
+        ),
     )
     if event_sink is not None:
         event_sink.append_event(inputs.run_id, "scoring.final_computed", result.to_dict())
