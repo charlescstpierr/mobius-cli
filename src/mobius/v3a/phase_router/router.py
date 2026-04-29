@@ -80,11 +80,17 @@ class PhaseRouter:
     wizard_countdown_seconds: int = 5
     _live_created: bool = False
 
-    def run(self, handlers: Mapping[str, PhaseHandler]) -> list[AgentPhasePayload]:
+    def run(
+        self,
+        handlers: Mapping[str, PhaseHandler],
+        *,
+        start_phase_key: str = "interview",
+    ) -> list[AgentPhasePayload]:
         """Run all four phases and return the agent payloads emitted."""
         agent_payloads: list[AgentPhasePayload] = []
+        start_phase = PHASE_BY_KEY[start_phase_key]
         with self._renderer():
-            for phase in PHASES:
+            for phase in PHASES[start_phase.index - 1 :]:
                 self._emit("phase.entered", {"phase": phase.key, "phase_index": phase.index})
                 result = handlers[phase.key](phase)
                 next_phase = PHASE_BY_KEY.get(phase.next_key or "")

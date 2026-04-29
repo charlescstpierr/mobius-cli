@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from mobius.v3a.phase_router.transitions import (
     RouterCommand,
     narrative_line,
@@ -40,3 +42,27 @@ def test_narrative_line_contains_required_phase_marker() -> None:
     assert "[Phase 2/4 complete — Seed]" in rendered
     assert "✓ Generated spec.yaml v2." in rendered
     assert "[Y / n / explain / back / stop]" in rendered
+
+
+def test_latest_resume_point_uses_next_phase_after_latest_completed_event(tmp_path: Path) -> None:
+    from mobius.persistence.event_store import EventStore
+    from mobius.v3a.phase_router.resume import latest_resume_point
+
+    with EventStore(tmp_path / "events.db") as store:
+        store.append_event(
+            "build-todo",
+            "phase.completed",
+            {"phase": "interview", "phase_index": 1, "fixture": "fixture.yaml"},
+        )
+        store.append_event(
+            "build-todo",
+            "phase.completed",
+            {"phase": "seed", "phase_index": 2, "spec_yaml": "spec.yaml"},
+        )
+
+        resume_point = latest_resume_point(store)
+
+    assert resume_point.run_id == "build-todo"
+    assert resume_point.completed_phase == "seed"
+    assert resume_point.next_phase == "maturity"
+    assert resume_point.artifacts["spec_yaml"] == "spec.yaml"

@@ -33,6 +33,10 @@ def register(app: typer.Typer) -> None:
             bool,
             typer.Option("--agent", help="Emit JSON suitable for coding-agent orchestration."),
         ] = False,
+        resume: Annotated[
+            bool,
+            typer.Option("--resume", help="Resume from the next incomplete build phase."),
+        ] = False,
     ) -> None:
         run_build(
             ctx.obj,
@@ -40,6 +44,7 @@ def register(app: typer.Typer) -> None:
             interactive=interactive,
             wizard=wizard,
             agent=agent,
+            resume=resume,
         )
 
 
@@ -50,13 +55,14 @@ def run_build(
     interactive: bool = True,
     wizard: bool = False,
     agent: bool = False,
+    resume: bool = False,
 ) -> None:
     """Execute the v3a four-phase build router."""
-    from mobius.config import get_paths
     from mobius.persistence.event_store import EventStore
     from mobius.v3a import load_runtime_config
     from mobius.v3a.interview.runner import run_interview
     from mobius.v3a.interview.scribe import run_seed_handoff
+    from mobius.v3a.phase_router.resume import ResumeUsageError, latest_resume_point
     from mobius.v3a.phase_router.router import (
         BuildLockError,
         PhaseResult,
@@ -78,7 +84,7 @@ def run_build(
     run_id = readable_session_id("build", resolved_intent)
     config = load_runtime_config(Path.cwd())
     run_dir = config.build_dir / run_id
-    paths = get_paths(context.mobius_home)
+    event_store_path = config.build_dir / "events.db"
     mode = _mode(interactive=interactive, wizard=wizard, agent=agent)
 
     # Register projections lazily when the command actually runs.
@@ -89,7 +95,20 @@ def run_build(
 
     artifacts: dict[str, Any] = {"intent": resolved_intent, "run_id": run_id}
     try:
-        with build_process_lock(context.mobius_home), EventStore(paths.event_store) as store:
+        with build_process_lock(context.mobius_home), EventStore(event_store_path) as store:
+            start_phase_key = "interview"
+            if resume:
+                resume_point = latest_resume_point(store)
+                run_id = resume_point.run_id
+                start_phase_key = resume_point.next_phase
+                run_dir = config.build_dir / run_id
+                artifacts.update(resume_point.artifacts)
+                artifacts.update(
+                    {
+                        "run_id": run_id,
+                        "resume_from": resume_point.completed_phase,
+                    }
+                )
             store.create_session(
                 run_id,
                 runtime="build",
@@ -214,8 +233,12 @@ def run_build(
                     "seed": seed_phase,
                     "maturity": maturity_phase,
                     "scoring": scoring_phase,
-                }
+                },
+                start_phase_key=start_phase_key,
             )
+    except ResumeUsageError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
     except BuildLockError as exc:
         raise typer.Exit(code=6) from exc
 

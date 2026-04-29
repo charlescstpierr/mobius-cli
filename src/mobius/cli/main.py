@@ -140,6 +140,10 @@ def build_command(
         bool,
         typer.Option("--agent", help="Emit JSON suitable for coding-agent orchestration."),
     ] = False,
+    resume: Annotated[
+        bool,
+        typer.Option("--resume", help="Resume from the next incomplete build phase."),
+    ] = False,
 ) -> None:
     """Run the v3a build command while keeping implementation under mobius.v3a."""
     module = importlib.import_module("mobius.v3a.cli.commands")
@@ -149,6 +153,7 @@ def build_command(
         interactive=interactive,
         wizard=wizard,
         agent=agent,
+        resume=resume,
     )
 
 
