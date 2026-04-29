@@ -41,13 +41,14 @@ def test_todo_cli_fixture_converges_without_deadlock(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    payload = json.loads(result.stdout)
+    payload = _payload_for_phase(result.stdout, "seed")
+    interview_payload = _payload_for_phase(result.stdout, "interview")
     assert payload["phase_done"] == "seed"
     assert payload["next_phase"] == "maturity"
     assert payload["turns"] <= 8
     assert payload["ambiguity_score"] < 0.2
     assert payload["max_component"] < 0.4
-    assert payload["converged_proposed"] is True
+    assert interview_payload["converged_proposed"] is True
     assert payload["human_confirmed"] is True
 
     transcript = Path(payload["transcript"])
@@ -69,3 +70,11 @@ def test_build_help_documents_modes(tmp_path: Path) -> None:
     assert "--interactive" in result.stdout
     assert "--wizard" in result.stdout
     assert "--agent" in result.stdout
+
+
+def _payload_for_phase(stdout: str, phase: str) -> dict[str, object]:
+    for line in stdout.splitlines():
+        payload = json.loads(line)
+        if payload.get("phase_done") == phase:
+            return payload
+    raise AssertionError(f"missing phase payload for {phase!r}: {stdout}")

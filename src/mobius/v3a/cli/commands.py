@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import importlib
-import json
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -53,21 +51,27 @@ def run_build(
     wizard: bool = False,
     agent: bool = False,
 ) -> None:
-    """Execute v3a Phase 1 and write transcript + fixture artifacts."""
-    from mobius.cli import output
+    """Execute the v3a four-phase build router."""
     from mobius.config import get_paths
     from mobius.persistence.event_store import EventStore
     from mobius.v3a import load_runtime_config
     from mobius.v3a.interview.runner import run_interview
     from mobius.v3a.interview.scribe import run_seed_handoff
+    from mobius.v3a.phase_router.router import (
+        BuildLockError,
+        PhaseResult,
+        PhaseRouter,
+        build_process_lock,
+        wizard_countdown_from_env,
+    )
     from mobius.workflow.ids import readable_session_id
-
-    # Register projection lazily when the command actually runs.
-    importlib.import_module("mobius.v3a.projections.interview_projection")
 
     resolved_intent = (intent or "").strip()
     if not resolved_intent and interactive and not agent and not wizard:
-        resolved_intent = typer.prompt("What do you want to build?").strip()
+        import sys
+
+        if sys.stdin.isatty():
+            resolved_intent = typer.prompt("What do you want to build?").strip()
     if not resolved_intent:
         resolved_intent = "tiny TODO CLI"
 
@@ -75,86 +79,145 @@ def run_build(
     config = load_runtime_config(Path.cwd())
     run_dir = config.build_dir / run_id
     paths = get_paths(context.mobius_home)
+    mode = _mode(interactive=interactive, wizard=wizard, agent=agent)
 
-    with EventStore(paths.event_store) as store:
-        store.create_session(
-            run_id,
-            runtime="build",
-            metadata={"mode": _mode(interactive=interactive, wizard=wizard, agent=agent)},
-            status="running",
-        )
-        store.append_event(
-            run_id,
-            "interview.llm_call_started",
-            {"agents": ["socrate", "avocat", "architecte"], "intent": resolved_intent},
-        )
-        result = run_interview(
-            intent=resolved_intent,
-            run_id=run_id,
-            output_dir=run_dir,
-            auto_confirm=True,
-        )
-        store.append_event(
-            run_id,
-            "interview.llm_call_completed",
-            {
-                "turns": result.turns,
-                "ambiguity_score": result.ambiguity_score,
-                "max_component": result.max_component,
-            },
-        )
-        store.append_event(
-            run_id,
-            "interview.transcript_appended",
-            {"turn": result.turns, "transcript": str(result.transcript_path)},
-        )
-        store.append_event(
-            run_id,
-            "interview.lemma_check_passed",
-            {"turn": result.turns, "convergence_exempt": result.socrate_proposed_done},
-        )
-        seed_result = run_seed_handoff(
-            fixture_path=result.fixture_path,
-            workspace=config.workspace,
-        )
-        store.append_event(
-            run_id,
-            "phase.completed",
-            {
-                "phase": "seed",
-                "spec_path": str(seed_result.spec_path),
-                "backup_path": str(seed_result.backup_path) if seed_result.backup_path else "",
-                "command": list(seed_result.command),
-            },
-        )
-        store.end_session(run_id, status="completed")
+    # Register projections lazily when the command actually runs.
+    import importlib
 
-    payload = {
-        "phase_done": "seed",
-        "next_phase": "maturity",
-        "next_command": "mobius build --resume",
-        "run_id": run_id,
-        "transcript": str(result.transcript_path),
-        "fixture": str(result.fixture_path),
-        "spec_yaml": str(seed_result.spec_path),
-        "backup": str(seed_result.backup_path) if seed_result.backup_path else None,
-        "turns": result.turns,
-        "ambiguity_score": result.ambiguity_score,
-        "max_component": result.max_component,
-        "converged_proposed": result.socrate_proposed_done,
-        "human_confirmed": result.human_confirmed,
-    }
-    if agent or getattr(context, "json_output", False):
-        output.write_line(json.dumps(payload, sort_keys=True, separators=(",", ":")))
-        return
-    output.write_line(f"run_id={run_id}")
-    output.write_line(f"transcript={result.transcript_path}")
-    output.write_line(f"fixture={result.fixture_path}")
-    output.write_line(f"spec_yaml={seed_result.spec_path}")
-    if seed_result.backup_path is not None:
-        output.write_line(f"backup={seed_result.backup_path}")
-    output.write_line(f"ambiguity_score={result.ambiguity_score}")
-    output.write_line(f"max_component={result.max_component}")
+    importlib.import_module("mobius.v3a.projections.interview_projection")
+    importlib.import_module("mobius.v3a.projections.phase_projection")
+
+    artifacts: dict[str, Any] = {"intent": resolved_intent, "run_id": run_id}
+    try:
+        with build_process_lock(context.mobius_home), EventStore(paths.event_store) as store:
+            store.create_session(
+                run_id,
+                runtime="build",
+                metadata={"mode": mode},
+                status="running",
+            )
+
+            def interview_phase(_phase: Any) -> PhaseResult:
+                store.append_event(
+                    run_id,
+                    "interview.llm_call_started",
+                    {
+                        "agents": ["socrate", "avocat", "architecte"],
+                        "intent": resolved_intent,
+                    },
+                )
+                result = run_interview(
+                    intent=resolved_intent,
+                    run_id=run_id,
+                    output_dir=run_dir,
+                    auto_confirm=True,
+                )
+                artifacts.update(
+                    {
+                        "transcript": str(result.transcript_path),
+                        "fixture": str(result.fixture_path),
+                        "turns": result.turns,
+                        "ambiguity_score": result.ambiguity_score,
+                        "max_component": result.max_component,
+                        "human_confirmed": result.human_confirmed,
+                    }
+                )
+                store.append_event(
+                    run_id,
+                    "interview.llm_call_completed",
+                    {
+                        "turns": result.turns,
+                        "ambiguity_score": result.ambiguity_score,
+                        "max_component": result.max_component,
+                    },
+                )
+                store.append_event(
+                    run_id,
+                    "interview.transcript_appended",
+                    {"turn": result.turns, "transcript": str(result.transcript_path)},
+                )
+                store.append_event(
+                    run_id,
+                    "interview.lemma_check_passed",
+                    {
+                        "turn": result.turns,
+                        "convergence_exempt": result.socrate_proposed_done,
+                    },
+                )
+                return PhaseResult(
+                    summary=(
+                        f"Wrote fixture.yaml and transcript.md after {result.turns} turns "
+                        f"(ambiguity {result.ambiguity_score:.2f})."
+                    ),
+                    payload=dict(artifacts),
+                    turn=result.turns,
+                    ambiguity_score=result.ambiguity_score,
+                    converged_proposed=result.socrate_proposed_done,
+                )
+
+            def seed_phase(_phase: Any) -> PhaseResult:
+                fixture = Path(str(artifacts["fixture"]))
+                seed_result = run_seed_handoff(
+                    fixture_path=fixture,
+                    workspace=config.workspace,
+                )
+                artifacts.update(
+                    {
+                        "spec_yaml": str(seed_result.spec_path),
+                        "backup": (
+                            str(seed_result.backup_path)
+                            if seed_result.backup_path is not None
+                            else None
+                        ),
+                        "seed_command": list(seed_result.command),
+                    }
+                )
+                return PhaseResult(
+                    summary="Generated spec.yaml v2 via mobius interview --non-interactive.",
+                    payload=dict(artifacts),
+                )
+
+            def maturity_phase(_phase: Any) -> PhaseResult:
+                artifacts.update(
+                    {
+                        "maturity_status": "pending_f05",
+                        "maturity_report": str(run_dir / "maturity-report.md"),
+                    }
+                )
+                return PhaseResult(
+                    summary="Reserved maturity gate output for F05 implementation.",
+                    payload=dict(artifacts),
+                )
+
+            def scoring_phase(_phase: Any) -> PhaseResult:
+                artifacts.update(
+                    {
+                        "score_status": "pending_f06",
+                        "score_json": str(run_dir / "score.json"),
+                    }
+                )
+                store.end_session(run_id, status="completed")
+                return PhaseResult(
+                    summary="Reserved score.json and delivery handoff for F06/F08.",
+                    payload=dict(artifacts),
+                )
+
+            router = PhaseRouter(
+                run_id=run_id,
+                event_sink=store,
+                mode=mode,
+                wizard_countdown_seconds=wizard_countdown_from_env(),
+            )
+            router.run(
+                {
+                    "interview": interview_phase,
+                    "seed": seed_phase,
+                    "maturity": maturity_phase,
+                    "scoring": scoring_phase,
+                }
+            )
+    except BuildLockError as exc:
+        raise typer.Exit(code=6) from exc
 
 
 def _mode(*, interactive: bool, wizard: bool, agent: bool) -> str:

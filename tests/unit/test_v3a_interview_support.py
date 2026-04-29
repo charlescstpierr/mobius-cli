@@ -143,7 +143,7 @@ def test_run_build_agent_mode_writes_json_payload(
         agent=True,
     )
 
-    payload = json.loads(capsys.readouterr().out)
+    payload = _payload_for_phase(capsys.readouterr().out, "seed")
     assert payload["phase_done"] == "seed"
     assert payload["next_phase"] == "maturity"
     assert Path(payload["transcript"]).exists()
@@ -169,9 +169,17 @@ def test_run_build_non_agent_output_includes_seed_and_backup_paths(
     )
 
     output = capsys.readouterr().out
-    assert "run_id=build_tiny-todo-cli_" in output
-    assert f"spec_yaml={tmp_path / 'spec.yaml'}" in output
-    assert "backup=" in output
+    assert "[Phase 1/4 complete — Interview]" in output
+    assert "[Phase 2/4 complete — Seed]" in output
+    assert "[Phase 4/4 complete — Scoring + Delivery]" in output
     backups = list(tmp_path.glob("spec.yaml.pre-build.*.bak"))
     assert len(backups) == 1
     assert backups[0].read_text(encoding="utf-8") == "goal: previous\n"
+
+
+def _payload_for_phase(stdout: str, phase: str) -> dict[str, object]:
+    for line in stdout.splitlines():
+        payload = json.loads(line)
+        if payload.get("phase_done") == phase:
+            return payload
+    raise AssertionError(f"missing phase payload for {phase!r}: {stdout}")

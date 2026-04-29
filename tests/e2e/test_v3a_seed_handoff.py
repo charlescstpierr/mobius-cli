@@ -39,7 +39,7 @@ def test_build_phase_two_seeds_spec_yaml_that_passes_bronze(tmp_path: Path) -> N
     )
 
     assert result.returncode == 0, result.stderr
-    payload = json.loads(result.stdout)
+    payload = _payload_for_phase(result.stdout, "seed")
     assert payload["phase_done"] == "seed"
     assert payload["next_phase"] == "maturity"
 
@@ -89,3 +89,11 @@ def _normalize_generated_id(spec_text: str) -> str:
         "session_id: <generated>" if line.startswith("session_id:") else line
         for line in spec_text.splitlines()
     )
+
+
+def _payload_for_phase(stdout: str, phase: str) -> dict[str, object]:
+    for line in stdout.splitlines():
+        payload = json.loads(line)
+        if payload.get("phase_done") == phase:
+            return payload
+    raise AssertionError(f"missing phase payload for {phase!r}: {stdout}")
