@@ -270,6 +270,7 @@ def run_build(
                 )
 
             def scoring_phase(_phase: Any) -> PhaseResult:
+                from mobius.v3a.phase_router.handoff import run_auto_handoff
                 from mobius.v3a.scoring.engine import ScoreInputs, compute_score
 
                 spec_path = Path(str(artifacts.get("spec_yaml") or config.workspace / "spec.yaml"))
@@ -295,9 +296,23 @@ def run_build(
                         "score_json": str(score_path),
                     }
                 )
+                handoff = run_auto_handoff(spec_path=spec_path, output_dir=run_dir)
+                artifacts.update(
+                    {
+                        "handoff_agent": handoff.agent,
+                        "handoff_prompt": str(handoff.prompt_path),
+                        "handoff_copied_to_clipboard": handoff.copied_to_clipboard,
+                        "handoff_clipboard_tool": handoff.clipboard_tool,
+                        "handoff_command": list(handoff.command),
+                        "handoff_display": handoff.display,
+                    }
+                )
                 store.end_session(run_id, status="completed")
                 return PhaseResult(
-                    summary=f"Computed score {score.score_out_of_10}/10 and wrote score.json.",
+                    summary=(
+                        f"Computed score {score.score_out_of_10}/10, wrote score.json, "
+                        "and rendered the agent handoff prompt."
+                    ),
                     payload=dict(artifacts),
                 )
 

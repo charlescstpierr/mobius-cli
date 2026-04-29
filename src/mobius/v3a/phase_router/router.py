@@ -161,6 +161,10 @@ class PhaseRouter:
         sys.stdout.write("\n")
         sys.stdout.write(narrative_line(phase, result.summary, next_phase=next_phase))
         sys.stdout.write("\n")
+        handoff_display = result.payload.get("handoff_display")
+        if phase.key == "scoring" and isinstance(handoff_display, str):
+            sys.stdout.write(handoff_display)
+            sys.stdout.write("\n")
         if self.mode == "wizard" and next_phase is not None:
             self._render_wizard_countdown(next_phase)
 
