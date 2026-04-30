@@ -1024,6 +1024,60 @@ def projection_rebuild_command(
 app.add_typer(projection_app, name="projection")
 
 
+v3a_app = typer.Typer(
+    add_completion=False,
+    context_settings={"help_option_names": ["-h", "--help"]},
+    help="v3a-specific subcommands (matrix scoring, anti-regression diff).",
+)
+
+
+matrix_app = typer.Typer(
+    add_completion=False,
+    context_settings={"help_option_names": ["-h", "--help"]},
+    help="Per-cell scoring and diff for the F10 anti-regression product matrix.",
+)
+
+
+@matrix_app.command(name="diff", help="Compare two MatrixScores JSON files.")
+def matrix_diff_command(
+    ctx: typer.Context,
+    baseline: Annotated[
+        Path,
+        typer.Option(
+            "--baseline",
+            help="Path to the baseline MatrixScores JSON file (schema_version=1).",
+        ),
+    ],
+    candidate: Annotated[
+        Path,
+        typer.Option(
+            "--candidate",
+            help="Path to the candidate MatrixScores JSON file (schema_version=1).",
+        ),
+    ],
+    tolerance: Annotated[
+        int,
+        typer.Option(
+            "--tolerance",
+            min=0,
+            help="Maximum allowed per-cell drop before declaring a regression.",
+        ),
+    ] = 0,
+) -> None:
+    """Compare two MatrixScores JSON files and emit a verdict + exit code."""
+    module = importlib.import_module("mobius.v3a.cli.commands")
+    cast(Any, module).run_matrix_diff(
+        ctx.obj,
+        baseline=baseline,
+        candidate=candidate,
+        tolerance=tolerance,
+    )
+
+
+v3a_app.add_typer(matrix_app, name="matrix")
+app.add_typer(v3a_app, name="v3a")
+
+
 worker_app = typer.Typer(
     add_completion=False,
     context_settings={"help_option_names": ["-h", "--help"]},
