@@ -5,6 +5,7 @@ from __future__ import annotations
 import typer
 
 from mobius.cli import output
+from mobius.cli.formatter import get_formatter
 from mobius.cli.main import CliContext, ExitCode
 from mobius.workflow.smoke import SmokeReport, run_smoke
 
@@ -17,10 +18,8 @@ def run(
 ) -> None:
     """Execute the offline end-to-end workflow smoke test."""
     report = run_smoke(keep_workspace=keep_workspace)
-    if context.json_output or json_output:
-        output.write_json(report.model_dump_json())
-    else:
-        _write_markdown(report)
+    formatter = get_formatter(context, json_output=json_output)
+    formatter.emit(report, text=lambda: _write_markdown(report))
     if not report.passed:
         raise typer.Exit(code=int(ExitCode.GENERIC_ERROR))
 

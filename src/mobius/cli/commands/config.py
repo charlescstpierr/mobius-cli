@@ -6,6 +6,7 @@ import typer
 from pydantic import BaseModel, ConfigDict
 
 from mobius.cli import output
+from mobius.cli.formatter import get_formatter
 from mobius.cli.main import CliContext, ExitCode
 from mobius.config import load_config, save_config
 from mobius.persistence.event_store import EventStore
@@ -57,16 +58,8 @@ def show(context: CliContext, *, json_output: bool = False) -> None:
         busy_timeout=int(busy_timeout[0]),
         values=loaded.config.to_mapping(),
     )
-    if context.json_output or json_output:
-        output.write_json(payload.model_dump_json())
-        return
-
-    output.write_line(f"state_dir={payload.state_dir}")
-    output.write_line(f"event_store={payload.event_store}")
-    output.write_line(f"config_file={payload.config_file}")
-    output.write_line(f"busy_timeout={payload.busy_timeout}")
-    for key, value in payload.values.items():
-        output.write_line(f"{key}={value}")
+    formatter = get_formatter(context, json_output=json_output)
+    formatter.emit(payload, text=lambda: _write_show_text(payload))
 
 
 _DERIVED_KEYS = ("state_dir", "event_store", "config_file")
@@ -81,10 +74,8 @@ def get(context: CliContext, key: str, *, json_output: bool = False) -> None:
     if value is None:
         output.write_error_line(f"config key not found: {key}")
         raise typer.Exit(code=int(ExitCode.NOT_FOUND))
-    if context.json_output or json_output:
-        output.write_json(ConfigGetOutput(key=key, value=value).model_dump_json())
-        return
-    output.write_line(value)
+    formatter = get_formatter(context, json_output=json_output)
+    formatter.emit(ConfigGetOutput(key=key, value=value), text=value)
 
 
 def set_value(context: CliContext, key: str, value: str, *, json_output: bool = False) -> None:
@@ -94,12 +85,22 @@ def set_value(context: CliContext, key: str, value: str, *, json_output: bool = 
     if persisted_value is None:
         msg = f"failed to persist config key: {key}"
         raise RuntimeError(msg)
-    if context.json_output or json_output:
-        output.write_json(ConfigSetOutput(key=key, value=persisted_value).model_dump_json())
-        return
-    output.write_line(f"{key}={persisted_value}")
+    formatter = get_formatter(context, json_output=json_output)
+    formatter.emit(
+        ConfigSetOutput(key=key, value=persisted_value),
+        text=f"{key}={persisted_value}",
+    )
 
 
 def run(_context: CliContext) -> None:
     """Default to showing config for backward-compatible `mobius config` use."""
     show(_context)
+
+
+def _write_show_text(payload: ConfigShowOutput) -> None:
+    output.write_line(f"state_dir={payload.state_dir}")
+    output.write_line(f"event_store={payload.event_store}")
+    output.write_line(f"config_file={payload.config_file}")
+    output.write_line(f"busy_timeout={payload.busy_timeout}")
+    for key, value in payload.values.items():
+        output.write_line(f"{key}={value}")

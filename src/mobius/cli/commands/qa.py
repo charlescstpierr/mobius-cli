@@ -5,6 +5,7 @@ from __future__ import annotations
 import typer
 
 from mobius.cli import output
+from mobius.cli.formatter import get_formatter
 from mobius.cli.main import CliContext, ExitCode
 from mobius.config import get_paths
 from mobius.workflow.qa import QAReport, Verdict, evaluate_run_qa
@@ -30,10 +31,8 @@ def run(
         output.write_error_line(f"run not found: {run_id}")
         raise typer.Exit(code=int(ExitCode.NOT_FOUND))
 
-    if context.json_output or json_output:
-        output.write_json(report.model_dump_json())
-    else:
-        _write_markdown(report)
+    formatter = get_formatter(context, json_output=json_output)
+    formatter.emit(report, text=lambda: _write_markdown(report))
 
     if report.summary.global_verdict == Verdict.FAIL:
         raise typer.Exit(code=int(ExitCode.GENERIC_ERROR))

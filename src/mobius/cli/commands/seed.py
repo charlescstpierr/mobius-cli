@@ -8,6 +8,7 @@ import typer
 from pydantic import BaseModel, ConfigDict
 
 from mobius.cli import output
+from mobius.cli.formatter import get_formatter
 from mobius.cli.main import CliContext, ExitCode
 from mobius.config import get_paths
 from mobius.persistence.event_store import EventStore
@@ -96,10 +97,8 @@ def run(
         criteria_met=grade.criteria_met if grade is not None else None,
         criteria_total=grade.criteria_total if grade is not None else None,
     )
-    if context.json_output or json_output:
-        output.write_json(payload.model_dump_json())
-        return
-    output.write_line(payload.session_id)
+    formatter = get_formatter(context, json_output=json_output)
+    formatter.emit(payload, text=payload.session_id)
 
 
 def _resolve_spec_path(event_store_path: Path, spec_or_session_id: str) -> Path:

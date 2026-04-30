@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import json
-
 import typer
 
-from mobius.cli import output
+from mobius.cli.formatter import get_formatter
 from mobius.cli.main import CliContext, ExitCode
 
 
@@ -22,11 +20,11 @@ def run(
 
     checks = run_doctor(cwd=Path.cwd(), mobius_home=context.mobius_home)
     payload = [check.to_payload() for check in checks]
-    if context.json_output or json_output:
-        output.write_json(json.dumps(payload, sort_keys=True, separators=(",", ":")))
-    else:
-        for check in checks:
-            output.write_line(f"{check.check_name}: {check.status} — {check.details}")
+    formatter = get_formatter(context, json_output=json_output)
+    formatter.emit(
+        payload,
+        text=[f"{check.check_name}: {check.status} — {check.details}" for check in checks],
+    )
 
     if any(check.status == "fail" for check in checks):
         raise typer.Exit(code=int(ExitCode.GENERIC_ERROR))

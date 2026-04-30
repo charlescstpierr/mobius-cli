@@ -12,6 +12,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from mobius.cli import output
+from mobius.cli.formatter import get_formatter
 from mobius.cli.main import CliContext
 from mobius.config import get_paths
 from mobius.persistence.event_store import EventStore
@@ -65,10 +66,11 @@ def ls(
     options = _ListOptions(limit=limit, show_all=show_all, runtime=runtime)
     rows = _read_rows(paths.event_store, options)
 
-    if context.json_output or json_output:
-        output.write_json(RunsListing(runs=rows).model_dump_json())
-        return
+    formatter = get_formatter(context, json_output=json_output)
+    formatter.emit(RunsListing(runs=rows), text=lambda: _write_rows_table(rows))
 
+
+def _write_rows_table(rows: list[RunRow]) -> None:
     if not rows:
         output.write_line("(no runs found)")
         return

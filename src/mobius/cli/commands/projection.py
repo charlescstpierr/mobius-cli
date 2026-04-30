@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import json
-
 import typer
 
 from mobius.cli import output
+from mobius.cli.formatter import get_formatter
 from mobius.cli.main import CliContext, ExitCode
 from mobius.config import get_paths
 
@@ -51,10 +50,11 @@ def rebuild(
         "from_event_id": from_event_id,
         "rebuilt_at": rebuilt_at,
     }
-    if context.json_output or json_output:
-        output.write_json(json.dumps(payload, sort_keys=True, separators=(",", ":")))
-    else:
-        output.write_line(
+    formatter = get_formatter(context, json_output=json_output)
+    formatter.emit(
+        payload,
+        text=(
             f"projection rebuilt: events_replayed={events_replayed} "
             f"duration_ms={duration_ms}"
-        )
+        ),
+    )

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import typer
 
 from mobius.cli import output
+from mobius.cli.formatter import get_formatter
 from mobius.cli.main import CliContext, ExitCode
 
 
@@ -30,13 +30,16 @@ def run(
         raise typer.Exit(code=int(ExitCode.GENERIC_ERROR)) from exc
 
     payload = result.to_payload()
-    if context.json_output or json_output:
-        output.write_json(json.dumps(payload, sort_keys=True, separators=(",", ":")))
-    elif result.changed:
-        backup_note = "created" if result.backup_created else "preserved"
-        output.write_line(f"migrated {result.spec_path} to spec_version: 2")
-        output.write_line(f"backup {backup_note}: {result.backup_path}")
-    else:
-        output.write_line(f"already spec_version: 2: {result.spec_path}")
+    formatter = get_formatter(context, json_output=json_output)
+    backup_note = "created" if result.backup_created else "preserved"
+    text = (
+        [
+            f"migrated {result.spec_path} to spec_version: 2",
+            f"backup {backup_note}: {result.backup_path}",
+        ]
+        if result.changed
+        else f"already spec_version: 2: {result.spec_path}"
+    )
+    formatter.emit(payload, text=text)
 
     raise typer.Exit(code=int(ExitCode.OK))

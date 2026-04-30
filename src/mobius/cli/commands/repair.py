@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import json
-
 import typer
 
 from mobius.cli import output
+from mobius.cli.formatter import get_formatter
 from mobius.cli.main import CliContext, ExitCode
 
 
@@ -27,14 +26,15 @@ def run(
         raise typer.Exit(code=int(ExitCode.GENERIC_ERROR)) from exc
 
     payload = [action.to_payload() for action in actions]
-    if context.json_output or json_output:
-        output.write_json(json.dumps(payload, sort_keys=True, separators=(",", ":")))
-    elif actions:
-        for action in actions:
-            output.write_line(
-                f"{action.repair_type}: {action.target} — {action.before} -> {action.after}"
-            )
-    else:
-        output.write_line("no repairs needed")
+    formatter = get_formatter(context, json_output=json_output)
+    text = (
+        [
+            f"{action.repair_type}: {action.target} — {action.before} -> {action.after}"
+            for action in actions
+        ]
+        if actions
+        else "no repairs needed"
+    )
+    formatter.emit(payload, text=text)
 
     raise typer.Exit(code=int(ExitCode.OK))
