@@ -5,42 +5,19 @@ from __future__ import annotations
 from pathlib import Path
 
 import typer
-from pydantic import BaseModel, ConfigDict
 
 from mobius.cli import output
 from mobius.cli.main import CliContext, ExitCode
 from mobius.config import get_paths
+from mobius.workflow.launcher import WorkerLauncher, run_worker_config
 from mobius.workflow.run import execute_run, prepare_run, run_foreground, start_detached_worker
 from mobius.workflow.seed import SeedSpecValidationError
 
 
-class RunOutput(BaseModel):
-    """Structured output for a started run."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    run_id: str
-    mode: str
-    pid: int | None
-    log: str
-
-
 def run(
-    context: CliContext,
-    *,
-    spec_path: Path,
-    detach: bool = True,
-    foreground: bool = False,
+    context: CliContext, *, spec_path: Path, detach: bool = True, foreground: bool = False
 ) -> None:
-    """Validate and start a run.
-
-    Detach is the default: the command forks ``mobius _worker run <id>``, writes
-    a PID file and immediately prints the run id. Foreground mode executes the
-    same worker loop in-process and streams events to stderr.
-    """
-    if foreground and detach:
-        detach = False
-
+    """Validate and start a run."""
     paths = get_paths(context.mobius_home)
     try:
         prepared = prepare_run(paths, spec_path)
@@ -51,27 +28,18 @@ def run(
         output.write_error_line(f"invalid spec: {exc}")
         raise typer.Exit(code=int(ExitCode.VALIDATION)) from exc
 
-    if foreground:
-        exit_code = run_foreground(paths, prepared)
-        if exit_code != int(ExitCode.OK):
-            raise typer.Exit(code=exit_code)
-        return
-
-    if not detach:
-        output.write_error_line("run requires either --detach or --foreground")
-        raise typer.Exit(code=int(ExitCode.USAGE))
-
-    pid = start_detached_worker(paths, prepared)
-    payload = RunOutput(
-        run_id=prepared.run_id,
-        mode="detach",
-        pid=pid,
-        log=str(prepared.paths.log_file),
+    WorkerLauncher(paths).launch_for_cli(
+        run_worker_config(
+            prepared,
+            run_foreground=run_foreground,
+            start_detached=start_detached_worker,
+            success_exit_code=int(ExitCode.OK),
+        ),
+        detach=detach,
+        foreground=foreground,
+        json_output=context.json_output,
+        usage_exit_code=int(ExitCode.USAGE),
     )
-    if context.json_output:
-        output.write_json(payload.model_dump_json())
-        return
-    output.write_line(payload.run_id)
 
 
 def worker_run(context: CliContext, *, run_id: str) -> None:
