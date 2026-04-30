@@ -393,16 +393,13 @@ def run_maturity(context: Any, *, spec: Path, json_output: bool = False) -> None
     typer.echo(render_report(report))
 
 
-_MATRIX_SCHEMA_VERSION = 1
-
-
 def _load_matrix_scores_json(path: Path) -> dict[str, Any]:
     """Load and validate a baseline/candidate JSON file produced by ``matrix score``.
 
-    Returns a mapping ``cell_key -> ScoreResult``. Exits with code 2 on any
+    Returns a MatrixScores mapping. Exits with code 2 on any
     schema or parse error, with a clear message on stderr.
     """
-    from mobius.v3a.scoring.engine import ScoreResult
+    from mobius.v3a.matrix.pipeline import MatrixSerializationError, deserialize
 
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -414,46 +411,50 @@ def _load_matrix_scores_json(path: Path) -> dict[str, Any]:
         typer.echo(f"Top-level JSON in {path} must be an object.", err=True)
         raise typer.Exit(code=2)
 
-    schema_version = payload.get("schema_version")
-    if schema_version != _MATRIX_SCHEMA_VERSION:
-        typer.echo(
-            f"Unsupported schema_version {schema_version!r} in {path}; "
-            f"expected {_MATRIX_SCHEMA_VERSION}.",
-            err=True,
-        )
-        raise typer.Exit(code=2)
+    try:
+        return deserialize(payload)
+    except MatrixSerializationError as exc:
+        typer.echo(f"{exc} in {path}", err=True)
+        raise typer.Exit(code=2) from exc
 
-    scores_raw = payload.get("scores", {})
-    if not isinstance(scores_raw, dict):
-        typer.echo(f"Field 'scores' in {path} must be an object.", err=True)
-        raise typer.Exit(code=2)
 
-    result: dict[str, Any] = {}
-    for cell_key, score_data in scores_raw.items():
-        if not isinstance(score_data, dict):
-            typer.echo(
-                f"Score for cell {cell_key!r} in {path} must be an object.",
-                err=True,
-            )
-            raise typer.Exit(code=2)
-        try:
-            result[cell_key] = ScoreResult(
-                score_out_of_10=int(score_data["score_out_of_10"]),
-                score_rationale=str(score_data.get("score_rationale", "")),
-                score_breakdown=dict(
-                    score_data.get("score_breakdown", {"mechanical": {}, "llm": {}})
-                ),
-                score_recommendations=list(
-                    score_data.get("score_recommendations", [])
-                ),
-            )
-        except (KeyError, TypeError, ValueError) as exc:
-            typer.echo(
-                f"Invalid score payload for cell {cell_key!r} in {path}: {exc}",
-                err=True,
-            )
-            raise typer.Exit(code=2) from exc
-    return result
+def run_matrix_score(
+    context: Any,
+    *,
+    spec: Path,
+    output: Path,
+) -> None:
+    """Score every cell of a Spec's *Product matrix* and write canonical JSON.
+
+    Auto-disables when the Spec declares no ``matrix:`` (or an empty one):
+    writes ``{"schema_version": 1, "scores": {}}``, prints
+    "no matrix declared, skipping" and exits 0. The output is consumable
+    by ``mobius v3a matrix diff`` (slice 01).
+
+    Exit codes:
+      0 — JSON written (with or without cells).
+      Validation errors propagate from ``load_seed_spec``.
+    """
+    from mobius.v3a.matrix.pipeline import score as score_matrix
+    from mobius.v3a.matrix.pipeline import serialize
+    from mobius.workflow.seed import load_seed_spec
+
+    _ = context
+    seed_spec = load_seed_spec(spec)
+
+    if not seed_spec.matrix:
+        _write_canonical_json(output, serialize({}))
+        typer.echo("no matrix declared, skipping")
+        raise typer.Exit(code=0)
+
+    _write_canonical_json(output, serialize(score_matrix(seed_spec)))
+
+
+def _write_canonical_json(path: Path, payload: dict[str, Any]) -> None:
+    """Write ``payload`` as canonical JSON (sorted keys, indent 2, trailing newline)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    serialized = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    path.write_text(serialized, encoding="utf-8")
 
 
 def run_matrix_diff(
@@ -470,7 +471,7 @@ def run_matrix_diff(
       1 — verdict ``fail`` (at least one cell regressed).
       2 — JSON / schema validation failed.
     """
-    from mobius.v3a.matrix.diff import diff as matrix_diff
+    from mobius.v3a.matrix.pipeline import diff as matrix_diff
 
     _ = context
     baseline_scores = _load_matrix_scores_json(baseline)
@@ -478,7 +479,7 @@ def run_matrix_diff(
 
     report = matrix_diff(
         baseline=baseline_scores,
-        candidate=candidate_scores,
+        current=candidate_scores,
         tolerance=tolerance,
     )
 

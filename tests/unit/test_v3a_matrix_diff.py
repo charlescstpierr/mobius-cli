@@ -30,6 +30,7 @@ def test_diff_of_two_empty_matrices_is_pass_with_empty_lists() -> None:
     assert isinstance(report, MatrixDiffReport)
     assert report.verdict == "pass"
     assert report.regressions == ()
+    assert report.tolerated_regressions == ()
     assert report.improvements == ()
     assert report.unchanged == ()
     assert report.new_cells == ()
@@ -45,6 +46,7 @@ def test_diff_with_one_unchanged_cell_lists_it_as_unchanged() -> None:
     assert report.verdict == "pass"
     assert report.unchanged == (cell,)
     assert report.regressions == ()
+    assert report.tolerated_regressions == ()
     assert report.improvements == ()
     assert report.new_cells == ()
     assert report.dropped_cells == ()
@@ -64,6 +66,7 @@ def test_diff_with_one_regressed_cell_lists_it_and_fails() -> None:
     assert delta.candidate_score == 6
     assert delta.delta == -2
     assert report.unchanged == ()
+    assert report.tolerated_regressions == ()
     assert report.improvements == ()
 
 
@@ -75,6 +78,7 @@ def test_diff_with_dropped_cell_lists_it_as_dropped_not_regression() -> None:
     assert report.verdict == "pass"
     assert report.dropped_cells == (cell,)
     assert report.regressions == ()
+    assert report.tolerated_regressions == ()
     assert report.unchanged == ()
 
 
@@ -86,6 +90,7 @@ def test_diff_with_new_cell_lists_it_as_new_not_regression() -> None:
     assert report.verdict == "pass"
     assert report.new_cells == (cell,)
     assert report.regressions == ()
+    assert report.tolerated_regressions == ()
     assert report.unchanged == ()
 
 
@@ -102,6 +107,7 @@ def test_diff_with_one_improved_cell_lists_it_and_passes() -> None:
     assert delta.candidate_score == 8
     assert delta.delta == 2
     assert report.regressions == ()
+    assert report.tolerated_regressions == ()
     assert report.unchanged == ()
 
 
@@ -116,6 +122,12 @@ def test_tolerance_of_one_absorbs_a_regression_of_exactly_one_point() -> None:
 
     assert report.verdict == "pass"
     assert report.regressions == ()
+    assert len(report.tolerated_regressions) == 1
+    tolerated = report.tolerated_regressions[0]
+    assert tolerated.cell_key == cell
+    assert tolerated.baseline_score == 8
+    assert tolerated.candidate_score == 7
+    assert tolerated.delta == -1
 
 
 def test_tolerance_of_one_does_not_absorb_a_regression_of_two_points() -> None:
@@ -130,6 +142,7 @@ def test_tolerance_of_one_does_not_absorb_a_regression_of_two_points() -> None:
     assert report.verdict == "fail"
     assert len(report.regressions) == 1
     assert report.regressions[0].delta == -2
+    assert report.tolerated_regressions == ()
 
 
 def test_diff_partitions_mixed_regression_improvement_and_unchanged_correctly() -> None:
@@ -145,6 +158,7 @@ def test_diff_partitions_mixed_regression_improvement_and_unchanged_correctly() 
     assert report.verdict == "fail"
     assert len(report.regressions) == 1
     assert report.regressions[0].cell_key == regressed
+    assert report.tolerated_regressions == ()
     assert len(report.improvements) == 1
     assert report.improvements[0].cell_key == improved
     assert report.unchanged == (same,)

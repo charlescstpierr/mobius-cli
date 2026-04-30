@@ -33,6 +33,7 @@ class MatrixDiffReport:
     """Verdict of comparing one MatrixScores baseline against a candidate."""
 
     regressions: tuple[CellDelta, ...]
+    tolerated_regressions: tuple[CellDelta, ...]
     improvements: tuple[CellDelta, ...]
     unchanged: tuple[str, ...]
     new_cells: tuple[str, ...]
@@ -49,6 +50,7 @@ def diff(
     """Return a MatrixDiffReport comparing ``candidate`` against ``baseline``."""
     unchanged: list[str] = []
     regressions: list[CellDelta] = []
+    tolerated_regressions: list[CellDelta] = []
     improvements: list[CellDelta] = []
     dropped_cells: list[str] = []
     for cell_key, baseline_result in baseline.items():
@@ -69,15 +71,15 @@ def diff(
             unchanged.append(cell_key)
         elif delta < -tolerance:
             regressions.append(cell_delta)
+        elif delta < 0:
+            tolerated_regressions.append(cell_delta)
         elif delta > 0:
             improvements.append(cell_delta)
-        # else: delta < 0 but absorbed by tolerance — currently dropped from
-        # the report. If the CLI grows a need to surface "soft warnings", add
-        # a `tolerated_regressions` field rather than silently restoring them.
     new_cells = [cell_key for cell_key in candidate if cell_key not in baseline]
     verdict: Literal["pass", "fail"] = "fail" if regressions else "pass"
     return MatrixDiffReport(
         regressions=tuple(regressions),
+        tolerated_regressions=tuple(tolerated_regressions),
         improvements=tuple(improvements),
         unchanged=tuple(unchanged),
         new_cells=tuple(new_cells),
