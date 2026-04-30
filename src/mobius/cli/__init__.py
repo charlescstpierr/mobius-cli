@@ -21,10 +21,8 @@ class _LazyModuleProxy:
         return getattr(module, name)
 
 
-os = _LazyModuleProxy("os")
 sqlite3 = _LazyModuleProxy("sqlite3")
 
-_TERMINAL_STATES = frozenset({"completed", "failed", "crashed", "cancelled", "interrupted"})
 # Latest applied SQLite schema version. Kept in sync with mobius.persistence.event_store.MIGRATIONS.
 _LATEST_SCHEMA_VERSION = 1
 
@@ -412,47 +410,30 @@ def _try_fast_status(argv: list[str]) -> bool:
     if not db_path.exists():
         _raise_fast_not_found(run_id)
 
+    inspector = _fast_session_inspector(mobius_home, db_path)
     try:
-        with _connect(db_path, read_only=True) as connection:
-            run_id = _fast_resolve_run_id(connection, run_id)
+        resolved_run_id = inspector.resolve_run_id(run_id)
     except _sqlite3().Error as exc:
         sys.stderr.write(f"status failed: {exc}\n")
         raise SystemExit(1) from exc
+    if resolved_run_id is None:
+        _raise_fast_not_found(run_id)
+    if not isinstance(resolved_run_id, str):
+        candidates = ", ".join(resolved_run_id)
+        sys.stderr.write(f"ambiguous run prefix: {run_id}; candidates: {candidates}\n")
+        raise SystemExit(2)
+    run_id = resolved_run_id
 
-    _mark_stale_session_if_needed(mobius_home, db_path, run_id)
+    inspector.mark_stale_session_if_needed(run_id)
     try:
-        with _connect(db_path, read_only=True) as connection:
-            row = connection.execute(
-                """
-                SELECT session_id, started_at, status
-                FROM sessions
-                WHERE session_id = ?
-                """,
-                (run_id,),
-            ).fetchone()
-            if row is None:
-                _raise_fast_not_found(run_id)
-            event = connection.execute(
-                """
-                SELECT created_at
-                FROM events
-                WHERE aggregate_id = ?
-                ORDER BY sequence DESC
-                LIMIT 1
-                """,
-                (run_id,),
-            ).fetchone()
+        run_status = inspector.read_run_status(run_id)
     except _sqlite3().Error as exc:
         sys.stderr.write(f"status failed: {exc}\n")
         raise SystemExit(1) from exc
+    if run_status is None:
+        _raise_fast_not_found(run_id)
 
-    last_event_at = str(event["created_at"] if event is not None else row["started_at"])
-    payload = {
-        "run_id": str(row["session_id"]),
-        "state": str(row["status"]),
-        "started_at": str(row["started_at"]),
-        "last_event_at": last_event_at,
-    }
+    payload = run_status.to_payload()
     if json_output:
         sys.stdout.write(json.dumps(payload, separators=(",", ":")) + "\n")
         return True
@@ -467,87 +448,18 @@ def _try_fast_status(argv: list[str]) -> bool:
     return True
 
 
-def _fast_resolve_run_id(connection: SQLiteConnection, run_id: str) -> str:
-    if run_id == "latest":
-        row = connection.execute(
-            """
-            SELECT aggregate_id
-            FROM events
-            WHERE type = 'run.started'
-            ORDER BY created_at DESC
-            LIMIT 1
-            """
-        ).fetchone()
-        if row is None:
-            _raise_fast_not_found(run_id)
-        return str(row["aggregate_id"])
-    row = connection.execute(
-        "SELECT session_id FROM sessions WHERE session_id = ?",
-        (run_id,),
-    ).fetchone()
-    if row is not None:
-        return str(row["session_id"])
-    matches = connection.execute(
-        """
-        SELECT aggregate_id
-        FROM events
-        WHERE type = 'run.started'
-          AND aggregate_id LIKE ? ESCAPE '\\'
-        ORDER BY created_at DESC, aggregate_id ASC
-        """,
-        (f"{_escape_like(run_id)}%",),
-    ).fetchall()
-    if not matches:
-        _raise_fast_not_found(run_id)
-    if len(matches) > 1:
-        candidates = ", ".join(str(row["aggregate_id"]) for row in matches)
-        sys.stderr.write(f"ambiguous run prefix: {run_id}; candidates: {candidates}\n")
-        raise SystemExit(2)
-    return str(matches[0]["aggregate_id"])
+def _fast_session_inspector(mobius_home: Path, db_path: Path) -> Any:
+    from mobius.cli.session_inspector import SessionInspector, SQLiteSessionAdapter
 
-
-def _mark_stale_session_if_needed(mobius_home: Path, db_path: Path, session_id: str) -> None:
-    run_pid_file = mobius_home / "runs" / session_id / "pid"
-    evolution_pid_file = mobius_home / "evolutions" / session_id / "pid"
-    pid_file = evolution_pid_file if evolution_pid_file.exists() else run_pid_file
-    if not pid_file.exists():
-        return
-
-    with _connect(db_path, read_only=False) as connection:
-        session = connection.execute(
-            "SELECT runtime, status FROM sessions WHERE session_id = ?",
-            (session_id,),
-        ).fetchone()
-        runtime = (
-            str(session["runtime"])
-            if session is not None
-            else ("evolution" if pid_file == evolution_pid_file else "run")
-        )
-        if session is not None and str(session["status"]) in _TERMINAL_STATES:
-            _cleanup_pid_file(pid_file)
-            return
-        pid = _read_pid(pid_file)
-        if pid is not None and _pid_is_live(pid):
-            return
-        _cleanup_pid_file(pid_file)
-        if session is None:
-            _create_session(
-                connection,
-                session_id,
-                runtime,
-                {"reason": "stale pid file", "pid": pid},
-            )
-        _append_event(
-            connection,
-            session_id,
-            f"{runtime}.crashed",
-            {"reason": "stale pid file", "pid": pid},
-        )
-        ended_at = _iso8601_utc_now()
-        connection.execute(
-            "UPDATE sessions SET ended_at = ?, status = ? WHERE session_id = ?",
-            (ended_at, "crashed", session_id),
-        )
+    return SessionInspector(
+        state_dir=mobius_home,
+        adapter=SQLiteSessionAdapter(
+            db_path,
+            connect=lambda path, read_only: _connect(path, read_only=read_only),
+            now=_iso8601_utc_now,
+            canonical_json=_canonical_json,
+        ),
+    )
 
 
 _FAST_BOOTSTRAP_SQL = """
@@ -668,69 +580,10 @@ def _connect(db_path: Path, *, read_only: bool) -> SQLiteConnection:
     return cast("SQLiteConnection", connection)
 
 
-def _create_session(
-    connection: SQLiteConnection,
-    session_id: str,
-    runtime: str,
-    metadata: dict[str, object],
-) -> None:
-    connection.execute(
-        """
-        INSERT OR IGNORE INTO sessions(session_id, started_at, ended_at, runtime, metadata, status)
-        VALUES (?, ?, NULL, ?, ?, ?)
-        """,
-        (session_id, _iso8601_utc_now(), runtime, _canonical_json(metadata), "running"),
-    )
-
-
-def _append_event(
-    connection: SQLiteConnection,
-    aggregate_id: str,
-    event_type: str,
-    payload: dict[str, object],
-) -> None:
-    import uuid
-
-    sequence = connection.execute(
-        "SELECT COALESCE(MAX(sequence), 0) + 1 FROM events WHERE aggregate_id = ?",
-        (aggregate_id,),
-    ).fetchone()[0]
-    created_at = _iso8601_utc_now()
-    connection.execute(
-        """
-        INSERT INTO events(event_id, aggregate_id, sequence, type, payload, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-        """,
-        (
-            str(uuid.uuid4()),
-            aggregate_id,
-            sequence,
-            event_type,
-            _canonical_json(payload),
-            created_at,
-        ),
-    )
-    connection.execute(
-        """
-        INSERT INTO aggregates(aggregate_id, type, last_sequence, snapshot, updated_at)
-        VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(aggregate_id) DO UPDATE SET
-            type = excluded.type,
-            last_sequence = MAX(aggregates.last_sequence, excluded.last_sequence),
-            updated_at = excluded.updated_at
-        """,
-        (aggregate_id, event_type, sequence, "{}", created_at),
-    )
-
-
 def _canonical_json(payload: dict[str, object]) -> str:
     import json
 
     return json.dumps(payload, sort_keys=True, separators=(",", ":"))
-
-
-def _escape_like(value: str) -> str:
-    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _object_dict(value: object) -> dict[str, object]:
@@ -790,31 +643,6 @@ def _iso8601_utc_now() -> str:
     from datetime import UTC, datetime
 
     return datetime.now(UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
-
-
-def _read_pid(pid_file: Path) -> int | None:
-    try:
-        pid = int(pid_file.read_text(encoding="utf-8").strip())
-    except (OSError, ValueError):
-        return None
-    return pid if pid > 0 else None
-
-
-def _pid_is_live(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
-
-
-def _cleanup_pid_file(pid_file: Path) -> None:
-    from contextlib import suppress
-
-    with suppress(FileNotFoundError):
-        pid_file.unlink()
 
 
 def _raise_fast_not_found(run_id: str) -> NoReturn:

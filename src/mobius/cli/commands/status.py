@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-import os
 import time
-from contextlib import suppress
 from pathlib import Path
 from typing import NoReturn
 
 from pydantic import BaseModel, ConfigDict
 
 from mobius.cli import output
+from mobius.cli.formatter import get_formatter
 from mobius.cli.main import CliContext, ExitCode
+from mobius.cli.session_inspector import EventStoreSessionAdapter, RunStatus, SessionInspector
 from mobius.config import MobiusPaths, get_paths
 from mobius.persistence.event_store import EventRecord, EventStore
 from mobius.workflow.evolve import get_evolution_paths
@@ -54,30 +54,30 @@ def run(
 ) -> None:
     """Open the event store and report either store health or run status."""
     paths = get_paths(context.mobius_home)
+    inspector = _session_inspector(paths)
     if follow:
         if run_id is None:
             output.write_error_line("status --follow requires a run id")
             raise SystemExit(int(ExitCode.USAGE))
-        with EventStore(paths.event_store, read_only=read_only) as store:
-            run_id = _resolve_run_id(store, run_id)
-        _follow_run(paths.event_store, paths, run_id=run_id, read_only=read_only)
+        with EventStore(paths.event_store, read_only=read_only):
+            run_id = _resolve_run_id(inspector, run_id)
+        _follow_run(paths.event_store, paths, inspector, run_id=run_id, read_only=read_only)
         return
 
     if run_id is not None and not read_only:
-        with EventStore(paths.event_store) as store:
-            run_id = _resolve_run_id(store, run_id)
-        mark_stale_session_if_needed(paths, run_id)
+        with EventStore(paths.event_store):
+            run_id = _resolve_run_id(inspector, run_id)
+        inspector.mark_stale_session_if_needed(run_id)
 
     with EventStore(paths.event_store, read_only=read_only) as store:
         if run_id is not None:
-            run_id = _resolve_run_id(store, run_id)
-            run_payload = _read_run_status(store, run_id)
+            run_id = _resolve_run_id(inspector, run_id)
+            run_status = inspector.read_run_status(run_id)
+            run_payload = _to_run_status_output(run_status) if run_status is not None else None
             if run_payload is None:
                 _raise_not_found(run_id)
-            if context.json_output or json_output:
-                output.write_json(run_payload.model_dump_json())
-                return
-            _write_run_markdown(run_payload)
+            formatter = get_formatter(context, json_output=json_output)
+            formatter.emit(run_payload, text=lambda: _write_run_markdown(run_payload))
             return
 
         migration_count = store.connection.execute(
@@ -92,21 +92,15 @@ def run(
             event_count=int(event_count[0]),
         )
 
-    if context.json_output or json_output:
-        output.write_json(status_payload.model_dump_json())
-        return
-
-    output.write_line(f"event_store={status_payload.event_store}")
-    output.write_line(f"read_only={str(status_payload.read_only).lower()}")
-    output.write_line(f"migrations_applied={str(status_payload.migrations_applied).lower()}")
-    output.write_line(f"integrity_check={status_payload.integrity_check}")
-    output.write_line(f"event_count={status_payload.event_count}")
+    formatter = get_formatter(context, json_output=json_output)
+    formatter.emit(status_payload, text=lambda: _write_store_status(status_payload))
     return
 
 
 def _follow_run(
     event_store_path: Path,
     paths: MobiusPaths,
+    inspector: SessionInspector,
     *,
     run_id: str,
     read_only: bool,
@@ -117,10 +111,11 @@ def _follow_run(
 
     while True:
         if not read_only:
-            mark_stale_session_if_needed(paths, run_id)
+            inspector.mark_stale_session_if_needed(run_id)
 
         with EventStore(event_store_path, read_only=read_only) as store:
-            run_payload = _read_run_status(store, run_id)
+            run_status = inspector.read_run_status(run_id)
+            run_payload = _to_run_status_output(run_status) if run_status is not None else None
             if run_payload is None:
                 if saw_session or not pending_run_files:
                     _raise_not_found(run_id)
@@ -140,52 +135,33 @@ def _follow_run(
         time.sleep(_FOLLOW_INTERVAL_SECONDS)
 
 
-def _read_run_status(store: EventStore, run_id: str) -> RunStatusOutput | None:
-    session = store.connection.execute(
-        """
-        SELECT session_id, started_at, ended_at, status
-        FROM sessions
-        WHERE session_id = ?
-        """,
-        (run_id,),
-    ).fetchone()
-    if session is None:
-        return None
-    event = store.connection.execute(
-        """
-        SELECT created_at
-        FROM events
-        WHERE aggregate_id = ?
-        ORDER BY sequence DESC
-        LIMIT 1
-        """,
-        (run_id,),
-    ).fetchone()
-    last_event_at = str(event["created_at"] if event is not None else session["started_at"])
-    return RunStatusOutput(
-        run_id=str(session["session_id"]),
-        state=str(session["status"]),
-        started_at=str(session["started_at"]),
-        last_event_at=last_event_at,
+def _session_inspector(paths: MobiusPaths) -> SessionInspector:
+    return SessionInspector(
+        state_dir=paths.state_dir,
+        adapter=EventStoreSessionAdapter(paths.event_store),
     )
 
 
-def _resolve_run_id(store: EventStore, run_id: str) -> str:
-    if run_id == "latest":
-        latest = store.get_latest_run()
-        if latest is None:
-            _raise_not_found(run_id)
-        return latest.aggregate_id
-    if _read_run_status(store, run_id) is not None:
-        return run_id
-    matches = store.find_by_slug_prefix(run_id)
-    if not matches:
+def _to_run_status_output(status: RunStatus | None) -> RunStatusOutput | None:
+    if status is None:
+        return None
+    return RunStatusOutput(
+        run_id=status.run_id,
+        state=status.state,
+        started_at=status.started_at,
+        last_event_at=status.last_event_at,
+    )
+
+
+def _resolve_run_id(inspector: SessionInspector, run_id: str) -> str:
+    resolved = inspector.resolve_run_id(run_id)
+    if resolved is None:
         _raise_not_found(run_id)
-    if len(matches) > 1:
-        candidates = ", ".join(event.aggregate_id for event in matches)
+    if not isinstance(resolved, str):
+        candidates = ", ".join(resolved)
         output.write_error_line(f"ambiguous run prefix: {run_id}; candidates: {candidates}")
         raise SystemExit(int(ExitCode.USAGE))
-    return matches[0].aggregate_id
+    return resolved
 
 
 def _read_events_after_cursor(
@@ -225,6 +201,14 @@ def _write_run_markdown(run_payload: RunStatusOutput) -> None:
     output.write_line(f"| Last event at | {run_payload.last_event_at} |")
 
 
+def _write_store_status(status_payload: StatusOutput) -> None:
+    output.write_line(f"event_store={status_payload.event_store}")
+    output.write_line(f"read_only={str(status_payload.read_only).lower()}")
+    output.write_line(f"migrations_applied={str(status_payload.migrations_applied).lower()}")
+    output.write_line(f"integrity_check={status_payload.integrity_check}")
+    output.write_line(f"event_count={status_payload.event_count}")
+
+
 def _format_event_delta(event: EventRecord) -> str:
     return (
         f"- `{event.created_at}` seq={event.sequence} type={event.type} payload=`{event.payload}`"
@@ -244,83 +228,7 @@ def _has_pending_run_files(paths: MobiusPaths, run_id: str) -> bool:
 
 def mark_stale_session_if_needed(paths: MobiusPaths, session_id: str) -> None:
     """Mark any detached run/evolution crashed when its PID file is stale."""
-    session = _read_session(paths, session_id)
-    runtime = session[0] if session is not None else _runtime_from_pending_files(paths, session_id)
-    if runtime is None:
-        return
-    pid_file = _pid_file_for_runtime(paths, session_id, runtime)
-    if not pid_file.exists():
-        return
-    if session is not None and session[1] in _TERMINAL_STATES:
-        _cleanup_pid_file(pid_file)
-        return
-    pid = _read_pid(pid_file)
-    if pid is not None and _pid_is_live(pid):
-        return
-    _cleanup_pid_file(pid_file)
-    with EventStore(paths.event_store) as store:
-        store.create_session(
-            session_id,
-            runtime=runtime,
-            metadata={"reason": "stale pid file", "pid": pid},
-            status="running",
-        )
-        store.append_event(
-            session_id,
-            f"{runtime}.crashed",
-            {"reason": "stale pid file", "pid": pid},
-        )
-        store.end_session(session_id, status="crashed")
-
-
-def _read_session(paths: MobiusPaths, session_id: str) -> tuple[str, str] | None:
-    if not paths.event_store.exists():
-        return None
-    with EventStore(paths.event_store) as store:
-        row = store.connection.execute(
-            "SELECT runtime, status FROM sessions WHERE session_id = ?",
-            (session_id,),
-        ).fetchone()
-    if row is None:
-        return None
-    return str(row["runtime"]), str(row["status"])
-
-
-def _runtime_from_pending_files(paths: MobiusPaths, session_id: str) -> str | None:
-    if get_evolution_paths(paths, session_id).pid_file.exists():
-        return "evolution"
-    if get_run_paths(paths, session_id).pid_file.exists():
-        return "run"
-    return None
-
-
-def _pid_file_for_runtime(paths: MobiusPaths, session_id: str, runtime: str) -> Path:
-    if runtime == "evolution":
-        return get_evolution_paths(paths, session_id).pid_file
-    return get_run_paths(paths, session_id).pid_file
-
-
-def _read_pid(pid_file: Path) -> int | None:
-    try:
-        pid = int(pid_file.read_text(encoding="utf-8").strip())
-    except (OSError, ValueError):
-        return None
-    return pid if pid > 0 else None
-
-
-def _cleanup_pid_file(pid_file: Path) -> None:
-    with suppress(FileNotFoundError):
-        pid_file.unlink()
-
-
-def _pid_is_live(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+    _session_inspector(paths).mark_stale_session_if_needed(session_id)
 
 
 def _raise_not_found(run_id: str) -> NoReturn:
