@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import NoReturn
 
 from mobius.cli import output
+from mobius.cli.formatter import get_formatter
 from mobius.cli.main import CliContext, ExitCode
 from mobius.config import get_paths
 from mobius.workflow.lineage import (
@@ -40,55 +41,70 @@ def run(
     lineage = build_lineage(paths.event_store, selected_id)
     if lineage is None:
         _raise_not_found(selected_id)
-    if context.json_output or json_output:
-        output.write_json(lineage.model_dump_json())
-        return
-    _write_markdown(lineage)
+    formatter = get_formatter(context, json_output=json_output)
+    formatter.emit(lineage, text=_markdown_lines(lineage))
 
 
-def _write_markdown(lineage: LineageOutput) -> None:
-    output.write_line(f"# Lineage {lineage.aggregate_id}")
-    output.write_line("")
-    output.write_line("## Tree")
+def _markdown_lines(lineage: LineageOutput) -> list[str]:
+    lines = [f"# Lineage {lineage.aggregate_id}", "", "## Tree"]
     root_depth = min(_ancestor_depths(lineage))
     depth_offset = max(0, -root_depth)
     root_nodes = [node for node in lineage.ancestors if node.depth == root_depth]
     if root_nodes:
-        _write_node(
+        _append_node(
+            lines,
             root_nodes[0],
             current_id=lineage.current.aggregate_id,
             depth_offset=depth_offset,
         )
         for node in lineage.ancestors[1:]:
-            _write_node(
+            _append_node(
+                lines,
                 node,
                 current_id=lineage.current.aggregate_id,
                 depth_offset=depth_offset,
             )
-    _write_node(
+    _append_node(
+        lines,
         lineage.current,
         current_id=lineage.current.aggregate_id,
         depth_offset=depth_offset,
     )
     for node in lineage.descendants:
-        _write_node(node, current_id=lineage.current.aggregate_id, depth_offset=depth_offset)
-    output.write_line("")
-    output.write_line("## Current")
-    output.write_line("")
-    output.write_line("| Field | Value |")
-    output.write_line("| --- | --- |")
-    output.write_line(f"| Aggregate | `{lineage.current.aggregate_id}` |")
-    output.write_line(f"| Runtime | `{lineage.current.runtime}` |")
-    output.write_line(f"| Status | `{lineage.current.status}` |")
-    output.write_line(f"| Phase | `{lineage.current.phase}` |")
+        _append_node(
+            lines,
+            node,
+            current_id=lineage.current.aggregate_id,
+            depth_offset=depth_offset,
+        )
+    lines.extend(
+        [
+            "",
+            "## Current",
+            "",
+            "| Field | Value |",
+            "| --- | --- |",
+            f"| Aggregate | `{lineage.current.aggregate_id}` |",
+            f"| Runtime | `{lineage.current.runtime}` |",
+            f"| Status | `{lineage.current.status}` |",
+            f"| Phase | `{lineage.current.phase}` |",
+        ]
+    )
+    return lines
 
 
-def _write_node(node: LineageNode, *, current_id: str, depth_offset: int) -> None:
+def _append_node(
+    lines: list[str],
+    node: LineageNode,
+    *,
+    current_id: str,
+    depth_offset: int,
+) -> None:
     indent = "  " * max(node.depth + depth_offset, 0)
     label = node.runtime.capitalize()
     marker = " *(current)*" if node.aggregate_id == current_id else ""
     parent = f" parent=`{node.parent_id}`" if node.parent_id else ""
-    output.write_line(
+    lines.append(
         f"{indent}- {label} `{node.aggregate_id}` phase=`{node.phase}` "
         f"status=`{node.status}`{parent}{marker}"
     )

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import NoReturn
 
 from mobius.cli import output
+from mobius.cli.formatter import get_formatter
 from mobius.cli.main import CliContext, ExitCode
 from mobius.config import get_paths
 from mobius.workflow.ac_tree import ACTreeNode, ACTreeOutput, build_ac_tree
@@ -30,29 +31,38 @@ def run(
     )
     if tree is None:
         _raise_not_found(run_id)
-    if context.json_output or json_output:
-        output.write_json(tree.model_dump_json())
-        return
-    _write_markdown(tree)
+    formatter = get_formatter(context, json_output=json_output)
+    formatter.emit(tree, text=_markdown_lines(tree))
 
 
-def _write_markdown(tree: ACTreeOutput) -> None:
-    output.write_line(f"# AC Tree {tree.run_id}")
-    output.write_line("")
-    output.write_line(f"- State: `{tree.state}`")
-    output.write_line(f"- Cursor: `{tree.cursor}`")
+def _markdown_lines(tree: ACTreeOutput) -> list[str]:
+    lines = [
+        f"# AC Tree {tree.run_id}",
+        "",
+        f"- State: `{tree.state}`",
+        f"- Cursor: `{tree.cursor}`",
+    ]
     if tree.truncated:
-        output.write_line(f"- Truncated: `{tree.omitted_nodes}` omitted nodes")
-    output.write_line("")
+        lines.append(f"- Truncated: `{tree.omitted_nodes}` omitted nodes")
+    lines.append("")
 
     children_by_source: dict[str, list[tuple[str, str]]] = {}
     for edge in tree.edges:
         children_by_source.setdefault(edge.source, []).append((edge.target, edge.relation))
     node_by_id = {node.id: node for node in tree.nodes}
-    _write_node(tree.nodes[0], node_by_id, children_by_source, depth=0, seen=set())
+    _append_node(
+        lines,
+        tree.nodes[0],
+        node_by_id,
+        children_by_source,
+        depth=0,
+        seen=set(),
+    )
+    return lines
 
 
-def _write_node(
+def _append_node(
+    lines: list[str],
     node: ACTreeNode,
     node_by_id: dict[str, ACTreeNode],
     children_by_source: dict[str, list[tuple[str, str]]],
@@ -68,11 +78,12 @@ def _write_node(
         suffix = f" `seq={node.sequence}`"
     elif node.state is not None:
         suffix = f" `state={node.state}`"
-    output.write_line(f"{'  ' * depth}- {node.label}{suffix}")
+    lines.append(f"{'  ' * depth}- {node.label}{suffix}")
     for child_id, _relation in children_by_source.get(node.id, []):
         child = node_by_id.get(child_id)
         if child is not None:
-            _write_node(
+            _append_node(
+                lines,
                 child,
                 node_by_id,
                 children_by_source,
