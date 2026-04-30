@@ -205,7 +205,13 @@ def compute_ambiguity_score(fixture: InterviewFixture) -> AmbiguityScore:
     )
 
 
-def render_spec_yaml(session_id: str, fixture: InterviewFixture, score: AmbiguityScore) -> str:
+def render_spec_yaml(
+    session_id: str,
+    fixture: InterviewFixture,
+    score: AmbiguityScore,
+    *,
+    deep_metadata_path: Path | None = None,
+) -> str:
     """Render a stable project spec YAML document."""
     lines = [
         f"session_id: {_yaml_scalar(session_id)}",
@@ -228,7 +234,63 @@ def render_spec_yaml(session_id: str, fixture: InterviewFixture, score: Ambiguit
     )
     if fixture.is_brownfield:
         lines.append(f"context: {_yaml_scalar(fixture.context)}")
+    if deep_metadata_path is not None:
+        deep = _load_deep_metadata(deep_metadata_path)
+        lines.extend(_render_deep_metadata(deep))
     return "\n".join(lines) + "\n"
+
+
+def _load_deep_metadata(path: Path) -> dict[str, Any]:
+    """Load and validate a deep-metadata JSON file."""
+    raw = path.read_text(encoding="utf-8")
+    data = json.loads(raw)
+    if not isinstance(data, dict):
+        msg = "deep metadata JSON must contain an object"
+        raise ValueError(msg)
+    return data
+
+
+def _render_deep_metadata(deep: dict[str, Any]) -> list[str]:
+    """Render deep interview metadata as YAML lines."""
+    lines: list[str] = []
+    if "interview_mode" in deep:
+        lines.append(f"interview_mode: {_yaml_scalar(str(deep['interview_mode']))}")
+    if "clarity_score" in deep and isinstance(deep["clarity_score"], dict):
+        lines.append("clarity_score:")
+        for k, v in deep["clarity_score"].items():
+            lines.append(f"  {k}: {v}")
+    if "risks" in deep and isinstance(deep["risks"], list):
+        lines.append("risks:")
+        for risk in deep["risks"]:
+            if isinstance(risk, dict):
+                first = True
+                for k, v in risk.items():
+                    prefix = "  - " if first else "    "
+                    lines.append(f"{prefix}{k}: {_yaml_scalar(str(v))}")
+                    first = False
+    if "assumptions" in deep and isinstance(deep["assumptions"], list):
+        lines.append("assumptions:")
+        for assumption in deep["assumptions"]:
+            if isinstance(assumption, dict):
+                first = True
+                for k, v in assumption.items():
+                    prefix = "  - " if first else "    "
+                    lines.append(f"{prefix}{k}: {_yaml_scalar(str(v))}")
+                    first = False
+    if "premortem" in deep:
+        lines.append(f"premortem: {_yaml_scalar(str(deep['premortem']))}")
+    if "branches_explored" in deep:
+        lines.append(f"branches_explored: {deep['branches_explored']}")
+    if "concepts" in deep and isinstance(deep["concepts"], list):
+        lines.append("concepts:")
+        for concept in deep["concepts"]:
+            if isinstance(concept, dict):
+                first = True
+                for k, v in concept.items():
+                    prefix = "  - " if first else "    "
+                    lines.append(f"{prefix}{k}: {_yaml_scalar(str(v))}")
+                    first = False
+    return lines
 
 
 def question_answers(fixture: InterviewFixture) -> list[tuple[str, str, str | list[str]]]:

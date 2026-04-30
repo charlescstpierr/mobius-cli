@@ -764,6 +764,18 @@ def interview_command(
             "--project-type=brownfield.",
         ),
     ] = None,
+    deep_metadata: Annotated[
+        Path | None,
+        typer.Option(
+            "--deep-metadata",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+            help="JSON file with deep interview metadata (clarity score, risks, "
+            "assumptions, pre-mortem). Written by the agent in deep mode.",
+        ),
+    ] = None,
 ) -> None:
     """Run the interview command (interactive by default; --non-interactive for fixtures)."""
     module = importlib.import_module("mobius.cli.commands.interview")
@@ -778,6 +790,7 @@ def interview_command(
         constraints=constraint,
         success_criteria=success_criterion,
         context_value=context,
+        deep_metadata=deep_metadata,
     )
 
 

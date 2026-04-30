@@ -51,6 +51,7 @@ def run(
     constraints: list[str] | None = None,
     success_criteria: list[str] | None = None,
     context_value: str | None = None,
+    deep_metadata: Path | None = None,
 ) -> None:
     """Run an interview and write a project spec.
 
@@ -107,7 +108,7 @@ def run(
     paths = get_paths(context.mobius_home)
     output_path = output_path.expanduser().resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    spec_yaml = render_spec_yaml(session_id, fixture, score)
+    spec_yaml = render_spec_yaml(session_id, fixture, score, deep_metadata_path=deep_metadata)
 
     with EventStore(paths.event_store) as store:
         store.create_session(
@@ -208,10 +209,7 @@ def _build_non_interactive_fixture(
 
     final_template = (template or base.template or "blank").strip().lower() or "blank"
     if final_template not in TEMPLATE_NAMES:
-        msg = (
-            f"unknown template '{final_template}'. "
-            f"Allowed templates: {', '.join(TEMPLATE_NAMES)}"
-        )
+        msg = f"unknown template '{final_template}'. Allowed templates: {', '.join(TEMPLATE_NAMES)}"
         raise ValueError(msg)
 
     final_project_type = (project_type or base.project_type or "greenfield").strip().lower()

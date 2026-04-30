@@ -42,6 +42,13 @@ ALLOWED_KEYS: frozenset[str] = frozenset(
         "ambiguity_score",
         "ambiguity_gate",
         "ambiguity_components",
+        # Deep interview metadata (v2).
+        "interview_mode",
+        "clarity_score",
+        "assumptions",
+        "premortem",
+        "branches_explored",
+        "concepts",
     }
 )
 
@@ -89,6 +96,12 @@ class SeedSpec:
     owner: str | list[str] = ""
     agent_instructions: str | dict[str, str] = ""
     spec_version: int = 2
+    interview_mode: str = ""
+    clarity_score: dict[str, str] = field(default_factory=dict)
+    assumptions: list[dict[str, Any]] = field(default_factory=list)
+    premortem: str = ""
+    branches_explored: int = 0
+    concepts: list[dict[str, Any]] = field(default_factory=list)
 
     def to_event_payload(self) -> dict[str, Any]:
         """Return a JSON-compatible payload for event persistence."""
@@ -121,6 +134,12 @@ class SeedSpec:
                 else self.agent_instructions
             ),
             "spec_version": self.spec_version,
+            "interview_mode": self.interview_mode,
+            "clarity_score": dict(self.clarity_score),
+            "assumptions": [dict(a) for a in self.assumptions],
+            "premortem": self.premortem,
+            "branches_explored": self.branches_explored,
+            "concepts": [dict(c) for c in self.concepts],
         }
 
 
@@ -286,6 +305,38 @@ def validate_seed_spec(values: dict[str, Any]) -> SeedSpec:
         except ValueError as exc:
             errors.append(str(exc))
 
+    interview_mode = _as_text(values.get("interview_mode"))
+
+    clarity_score_val: dict[str, str] = {}
+    if "clarity_score" in values:
+        try:
+            clarity_score_val = _normalize_metadata(values.get("clarity_score"))
+        except ValueError as exc:
+            errors.append(str(exc))
+
+    assumptions_val: list[dict[str, Any]] = []
+    if "assumptions" in values:
+        try:
+            assumptions_val = _normalize_mapping_list(values.get("assumptions"), "assumptions")
+        except ValueError as exc:
+            errors.append(str(exc))
+
+    premortem_val = _as_text(values.get("premortem"))
+
+    branches_explored_val = 0
+    if "branches_explored" in values:
+        try:
+            branches_explored_val = _as_int(values.get("branches_explored"), "branches_explored")
+        except ValueError as exc:
+            errors.append(str(exc))
+
+    concepts_val: list[dict[str, Any]] = []
+    if "concepts" in values:
+        try:
+            concepts_val = _normalize_mapping_list(values.get("concepts"), "concepts")
+        except ValueError as exc:
+            errors.append(str(exc))
+
     if errors:
         raise SeedSpecValidationError("seed spec validation failed: " + "; ".join(errors))
 
@@ -308,6 +359,12 @@ def validate_seed_spec(values: dict[str, Any]) -> SeedSpec:
         owner=owner,
         agent_instructions=agent_instructions,
         spec_version=spec_version,
+        interview_mode=interview_mode,
+        clarity_score=clarity_score_val,
+        assumptions=assumptions_val,
+        premortem=premortem_val,
+        branches_explored=branches_explored_val,
+        concepts=concepts_val,
     )
 
 
