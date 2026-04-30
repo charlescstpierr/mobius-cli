@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from mobius.v3a.interview.architecte import propose_options
-from mobius.v3a.interview.avocat import inject_edge_case
-from mobius.v3a.interview.budget_tracker import BudgetTracker
+from mobius.v3a.interview.avocat import Avocat, DeterministicAvocat
+from mobius.v3a.interview.budget_tracker import BudgetTracker, InterviewBudget
 from mobius.v3a.interview.socrate import Keystroke, parse_keystroke, propose_question
 from mobius.v3a.interview.transcript import TranscriptTurn, TranscriptWriter
 
@@ -39,6 +39,8 @@ def run_interview(
     output_dir: Path,
     answers: list[str] | None = None,
     auto_confirm: bool = True,
+    budget_tracker: InterviewBudget | None = None,
+    avocat: Avocat | None = None,
 ) -> InterviewRunResult:
     """Run the deterministic three-agent interview loop."""
     from mobius.workflow.interview import compute_ambiguity_score
@@ -47,7 +49,8 @@ def run_interview(
     transcript_path = output_dir / "transcript.md"
     fixture_path = output_dir / "fixture.yaml"
     transcript = TranscriptWriter(transcript_path)
-    budget = BudgetTracker()
+    budget = BudgetTracker() if budget_tracker is None else budget_tracker
+    avocat_adapter = DeterministicAvocat() if avocat is None else avocat
     human_answers = answers or _default_answers(intent)
     justifications: list[str] = []
     constraints: list[str] = []
@@ -84,7 +87,7 @@ def run_interview(
             justifications.append(socrate.because)
         socrate_proposed = socrate.proposes_done
         human_confirmed = bool(auto_confirm and socrate.proposes_done)
-        avocat = inject_edge_case(turn_index, intent)
+        avocat_statement = avocat_adapter.inject_edge_case(turn_index, intent)
         options = propose_options(intent, turn_index)
         transcript.append_turn(
             TranscriptTurn(
@@ -92,7 +95,7 @@ def run_interview(
                 socrate=socrate.question,
                 because=socrate.because,
                 human=answer,
-                avocat=avocat.statement,
+                avocat=avocat_statement.statement,
                 architecte=tuple(f"{option.name}: {option.trade_off}" for option in options),
             )
         )

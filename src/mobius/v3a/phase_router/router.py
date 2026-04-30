@@ -9,7 +9,7 @@ from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, TextIO
 
 from mobius.v3a.phase_router.transitions import (
     PHASE_BY_KEY,
@@ -78,6 +78,8 @@ class PhaseRouter:
     event_sink: EventSink
     mode: str = "interactive"
     wizard_countdown_seconds: int = 5
+    output: TextIO = field(default_factory=lambda: sys.stdout)
+    live_factory: Callable[[], Any] | None = None
     _live_created: bool = False
 
     def run(
@@ -136,6 +138,8 @@ class PhaseRouter:
             msg = "PhaseRouter attempted to create more than one Rich.Live instance"
             raise RuntimeError(msg)
         self._live_created = True
+        if self.live_factory is not None:
+            return self.live_factory()
         from rich.live import Live
 
         return Live("", refresh_per_second=4, transient=True)
@@ -148,7 +152,7 @@ class PhaseRouter:
         agent_payload: AgentPhasePayload,
     ) -> None:
         if self.mode == "agent":
-            sys.stdout.write(
+            self.output.write(
                 json.dumps(agent_payload.as_dict(), sort_keys=True, separators=(",", ":")) + "\n"
             )
             return
@@ -157,20 +161,20 @@ class PhaseRouter:
             turn=result.turn,
             ambiguity_score=result.ambiguity_score,
         )
-        sys.stdout.write(rendered_status)
-        sys.stdout.write("\n")
-        sys.stdout.write(narrative_line(phase, result.summary, next_phase=next_phase))
-        sys.stdout.write("\n")
+        self.output.write(rendered_status)
+        self.output.write("\n")
+        self.output.write(narrative_line(phase, result.summary, next_phase=next_phase))
+        self.output.write("\n")
         handoff_display = result.payload.get("handoff_display")
         if phase.key == "scoring" and isinstance(handoff_display, str):
-            sys.stdout.write(handoff_display)
-            sys.stdout.write("\n")
+            self.output.write(handoff_display)
+            self.output.write("\n")
         if self.mode == "wizard" and next_phase is not None:
             self._render_wizard_countdown(next_phase)
 
     def _render_wizard_countdown(self, next_phase: PhaseDefinition) -> None:
         for remaining in range(self.wizard_countdown_seconds, 0, -1):
-            sys.stdout.write(
+            self.output.write(
                 f"Auto-proceeding to Phase {next_phase.index}/{len(PHASES)} "
                 f"in {remaining}s...\n"
             )

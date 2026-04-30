@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from mobius.persistence.event_store import EventRecord
-from mobius.persistence.projections import register_projection
+from mobius.v3a.projections.store import DEFAULT_V3A_PROJECTION_STORE, ProjectionStore
 
 
 class AuditProjection:
@@ -39,5 +39,15 @@ class AuditProjection:
 
 
 _AUDIT_PROJECTION = AuditProjection()
-register_projection("human.", _AUDIT_PROJECTION)
-register_projection("spec.maturity_overridden", _AUDIT_PROJECTION)
+
+
+def register_audit_projection(
+    store: ProjectionStore = DEFAULT_V3A_PROJECTION_STORE,
+) -> AuditProjection:
+    """Register audit projection adapters with ``store`` and return the updater."""
+    store.register("human.", _AUDIT_PROJECTION)
+    store.register("spec.maturity_overridden", _AUDIT_PROJECTION)
+    return _AUDIT_PROJECTION
+
+
+register_audit_projection()

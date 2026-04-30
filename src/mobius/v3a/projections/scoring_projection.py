@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from mobius.persistence.event_store import EventRecord
-from mobius.persistence.projections import register_projection
+from mobius.v3a.projections.store import DEFAULT_V3A_PROJECTION_STORE, ProjectionStore
 
 
 class ScoringProjection:
@@ -38,4 +38,15 @@ class ScoringProjection:
         return snapshot
 
 
-register_projection("scoring.", ScoringProjection())
+_SCORING_PROJECTION = ScoringProjection()
+
+
+def register_scoring_projection(
+    store: ProjectionStore = DEFAULT_V3A_PROJECTION_STORE,
+) -> ScoringProjection:
+    """Register the scoring projection adapter with ``store``."""
+    store.register("scoring.", _SCORING_PROJECTION)
+    return _SCORING_PROJECTION
+
+
+register_scoring_projection()

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from mobius.persistence.event_store import EventRecord
-from mobius.persistence.projections import register_projection
+from mobius.v3a.projections.store import DEFAULT_V3A_PROJECTION_STORE, ProjectionStore
 
 
 class PhaseRouterProjection:
@@ -36,4 +36,15 @@ class PhaseRouterProjection:
         return snapshot
 
 
-register_projection("phase.", PhaseRouterProjection())
+_PHASE_PROJECTION = PhaseRouterProjection()
+
+
+def register_phase_projection(
+    store: ProjectionStore = DEFAULT_V3A_PROJECTION_STORE,
+) -> PhaseRouterProjection:
+    """Register the phase-router projection adapter with ``store``."""
+    store.register("phase.", _PHASE_PROJECTION)
+    return _PHASE_PROJECTION
+
+
+register_phase_projection()

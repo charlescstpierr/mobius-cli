@@ -3,6 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Protocol
+
+
+class InterviewBudget(Protocol):
+    """Budget surface required by the interview runner."""
+
+    usd_spent: float
+
+    def record_mock_turn(self) -> float:
+        """Record and return the current estimated spend."""
+        ...
 
 
 @dataclass
