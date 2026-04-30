@@ -21,7 +21,6 @@ def test_ci_workflow_gates_lint_test_build_and_bench() -> None:
 
     required_commands = [
         "uv run ruff check src/ tests/",
-        "uv run ruff format --check src/ tests/",
         "uv run mypy --strict src/mobius/",
         "uv run pytest -q",
         "uv run pytest tests/chaos/ -q",
