@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import importlib
 import json
-import sys
 from pathlib import Path
 from types import ModuleType
 from unittest import mock
@@ -15,20 +13,9 @@ import typer
 from mobius.cli.main import CliContext, ExitCode
 
 
-def _run_command() -> ModuleType:
-    """Resolve the live command module each test invocation.
-
-    Some other test removes ``mobius.cli.commands.run`` from sys.modules to
-    verify lazy imports. We re-import here so mock targets and the called
-    module always agree.
-    """
-    return importlib.import_module("mobius.cli.commands.run")
-
-
 @pytest.fixture
-def run_command(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
-    sys.modules.pop("mobius.cli.commands.run", None)
-    return _run_command()
+def run_command(reloaded_command) -> ModuleType:
+    return reloaded_command("mobius.cli.commands.run")
 
 
 def _ctx(tmp_path: Path, *, json_output: bool = False) -> CliContext:

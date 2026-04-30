@@ -1,44 +1,22 @@
 from __future__ import annotations
 
 import json
-import os
-import subprocess
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-MOBIUS_BIN = PROJECT_ROOT / ".venv" / "bin" / "mobius"
 
-
-def run_mobius(*args: str, cwd: Path, mobius_home: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        [str(MOBIUS_BIN), *args],
-        cwd=cwd,
-        check=False,
-        capture_output=True,
-        text=True,
-        env={
-            **os.environ,
-            "MOBIUS_HOME": str(mobius_home),
-            "MOBIUS_LLM_MODE": "mock",
-            "MOBIUS_V3A_WIZARD_COUNTDOWN": "0",
-            "NO_COLOR": "1",
-            "PATH": f"{MOBIUS_BIN.parent}{os.pathsep}{os.environ.get('PATH', '')}",
-        },
-    )
-
-
-def test_full_build_score_is_stable_across_five_reruns(tmp_path: Path) -> None:
+def test_full_build_score_is_stable_across_five_reruns(tmp_path: Path, mobius_runner) -> None:
     scores: list[int] = []
     for index in range(5):
         workspace = tmp_path / f"workspace-{index}"
         workspace.mkdir()
-        result = run_mobius(
+        result = mobius_runner(
             "build",
             "tiny TODO CLI",
             "--agent",
             "--auto-top-up",
             cwd=workspace,
             mobius_home=tmp_path / f"home-{index}",
+            extra_env={"MOBIUS_LLM_MODE": "mock", "MOBIUS_V3A_WIZARD_COUNTDOWN": "0"},
         )
 
         assert result.returncode == 0, result.stderr

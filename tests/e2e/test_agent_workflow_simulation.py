@@ -14,8 +14,6 @@ across runtimes — Mobius itself is runtime-agnostic.
 
 from __future__ import annotations
 
-import os
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -46,26 +44,6 @@ EXTRACTED = {
 }
 
 
-def _run_mobius(
-    *args: str, mobius_home: Path, cwd: Path
-) -> subprocess.CompletedProcess[str]:
-    env = {
-        **os.environ,
-        "MOBIUS_HOME": str(mobius_home),
-        "MOBIUS_TEST_HOME": str(mobius_home),
-        "NO_COLOR": "1",
-    }
-    return subprocess.run(
-        ["uv", "run", "mobius", *args],
-        cwd=cwd,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=60,
-    )
-
-
 def _agent_invocation(workspace: Path, output_path: Path) -> list[str]:
     """Reproduce the exact flag sequence an agent would compose."""
     args: list[str] = [
@@ -88,7 +66,7 @@ def _agent_invocation(workspace: Path, output_path: Path) -> list[str]:
 
 
 @pytest.mark.parametrize("runtime", ["claude", "codex", "hermes"])
-def test_agent_drives_mobius_end_to_end(tmp_path: Path, runtime: str) -> None:
+def test_agent_drives_mobius_end_to_end(tmp_path: Path, runtime: str, mobius_runner) -> None:
     """Simulate runtime install + agent-driven interview + spec inspection."""
     mobius_home = tmp_path / "mobius-home"
     workspace = tmp_path / f"workspace-{runtime}"
@@ -97,7 +75,15 @@ def test_agent_drives_mobius_end_to_end(tmp_path: Path, runtime: str) -> None:
     # workspace empty so we exercise the explicit --template path.
 
     # 1. Install the runtime's Mobius assets.
-    setup = _run_mobius("setup", "--runtime", runtime, mobius_home=mobius_home, cwd=workspace)
+    setup = mobius_runner(
+        "setup",
+        "--runtime",
+        runtime,
+        mobius_home=mobius_home,
+        cwd=workspace,
+        extra_env={"MOBIUS_TEST_HOME": str(mobius_home)},
+        timeout=60,
+    )
     assert setup.returncode == 0, setup.stderr
 
     # 2. Verify the runtime's interview asset tells the agent what to do.
@@ -116,7 +102,13 @@ def test_agent_drives_mobius_end_to_end(tmp_path: Path, runtime: str) -> None:
     # 3. Simulate the agent's CLI invocation after the conversation.
     spec = workspace / "spec.yaml"
     invocation = _agent_invocation(workspace, spec)
-    result = _run_mobius(*invocation, mobius_home=mobius_home, cwd=workspace)
+    result = mobius_runner(
+        *invocation,
+        mobius_home=mobius_home,
+        cwd=workspace,
+        extra_env={"MOBIUS_TEST_HOME": str(mobius_home)},
+        timeout=60,
+    )
     assert result.returncode == 0, result.stderr
     assert result.stdout.startswith("session_id=interview_")
     assert result.stderr == "", result.stderr
@@ -133,7 +125,7 @@ def test_agent_drives_mobius_end_to_end(tmp_path: Path, runtime: str) -> None:
     assert "ambiguity_score: 0.0" in spec_text
 
 
-def test_agent_brownfield_invocation_includes_context(tmp_path: Path) -> None:
+def test_agent_brownfield_invocation_includes_context(tmp_path: Path, mobius_runner) -> None:
     """Brownfield scenario also surfaces context via --context."""
     mobius_home = tmp_path / "mobius-home"
     workspace = tmp_path / "brownfield-workspace"
@@ -141,7 +133,15 @@ def test_agent_brownfield_invocation_includes_context(tmp_path: Path) -> None:
 
     # Pre-install setup for codex (simplest runtime to exercise) just so the
     # workspace state mirrors a real agent session.
-    setup = _run_mobius("setup", "--runtime", "codex", mobius_home=mobius_home, cwd=workspace)
+    setup = mobius_runner(
+        "setup",
+        "--runtime",
+        "codex",
+        mobius_home=mobius_home,
+        cwd=workspace,
+        extra_env={"MOBIUS_TEST_HOME": str(mobius_home)},
+        timeout=60,
+    )
     assert setup.returncode == 0, setup.stderr
 
     spec = workspace / "spec.yaml"
@@ -167,7 +167,13 @@ def test_agent_brownfield_invocation_includes_context(tmp_path: Path) -> None:
         "--output",
         str(spec),
     ]
-    result = _run_mobius(*invocation, mobius_home=mobius_home, cwd=workspace)
+    result = mobius_runner(
+        *invocation,
+        mobius_home=mobius_home,
+        cwd=workspace,
+        extra_env={"MOBIUS_TEST_HOME": str(mobius_home)},
+        timeout=60,
+    )
     assert result.returncode == 0, result.stderr
 
     spec_text = spec.read_text(encoding="utf-8")
@@ -176,13 +182,20 @@ def test_agent_brownfield_invocation_includes_context(tmp_path: Path) -> None:
     assert "semantic versioning is strict" in spec_text
 
 
-def test_agent_invocation_without_input_or_flags_exits_with_usage(tmp_path: Path) -> None:
+def test_agent_invocation_without_input_or_flags_exits_with_usage(
+    tmp_path: Path, mobius_runner
+) -> None:
     """Bare ``mobius interview --non-interactive`` is still a usage error."""
     mobius_home = tmp_path / "mobius-home"
     workspace = tmp_path / "no-flags"
     workspace.mkdir()
-    result = _run_mobius(
-        "interview", "--non-interactive", mobius_home=mobius_home, cwd=workspace
+    result = mobius_runner(
+        "interview",
+        "--non-interactive",
+        mobius_home=mobius_home,
+        cwd=workspace,
+        extra_env={"MOBIUS_TEST_HOME": str(mobius_home)},
+        timeout=60,
     )
     assert result.returncode == 2, result.stderr
     assert "--input" in result.stderr or "--goal" in result.stderr

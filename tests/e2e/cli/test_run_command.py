@@ -9,17 +9,6 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
-def run_mobius(*args: str, mobius_home: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["uv", "run", "mobius", *args],
-        cwd=PROJECT_ROOT,
-        check=False,
-        capture_output=True,
-        text=True,
-        env={**os.environ, "MOBIUS_HOME": str(mobius_home), "NO_COLOR": "1"},
-    )
-
-
 def write_valid_spec(path: Path) -> None:
     path.write_text(
         """
@@ -103,13 +92,13 @@ def start_foreground_run(spec: Path, mobius_home: Path) -> subprocess.Popen[str]
     )
 
 
-def test_run_defaults_to_detach_writes_pid_and_cleans_up(tmp_path: Path) -> None:
+def test_run_defaults_to_detach_writes_pid_and_cleans_up(tmp_path: Path, mobius_runner) -> None:
     mobius_home = tmp_path / "home"
     spec = tmp_path / "spec.yaml"
     write_valid_spec(spec)
 
     started = time.monotonic()
-    result = run_mobius("run", "--spec", str(spec), mobius_home=mobius_home)
+    result = mobius_runner("run", "--spec", str(spec), mobius_home=mobius_home)
     elapsed = time.monotonic() - started
 
     assert result.returncode == 0
@@ -126,19 +115,19 @@ def test_run_defaults_to_detach_writes_pid_and_cleans_up(tmp_path: Path) -> None
     assert (mobius_home / "runs" / run_id / "log").exists()
 
     wait_for_no_pid_file(pid_file)
-    status = run_mobius("status", run_id, "--json", mobius_home=mobius_home)
+    status = mobius_runner("status", run_id, "--json", mobius_home=mobius_home)
     assert status.returncode == 0
     payload = json.loads(status.stdout)
     assert payload["run_id"] == run_id
     assert payload["state"] == "completed"
 
 
-def test_run_foreground_blocks_streams_events_and_cleans_pid(tmp_path: Path) -> None:
+def test_run_foreground_blocks_streams_events_and_cleans_pid(tmp_path: Path, mobius_runner) -> None:
     mobius_home = tmp_path / "home"
     spec = tmp_path / "spec.yaml"
     write_valid_spec(spec)
 
-    result = run_mobius("run", "--foreground", "--spec", str(spec), mobius_home=mobius_home)
+    result = mobius_runner("run", "--foreground", "--spec", str(spec), mobius_home=mobius_home)
 
     assert result.returncode == 0
     assert result.stdout == ""
@@ -147,7 +136,7 @@ def test_run_foreground_blocks_streams_events_and_cleans_pid(tmp_path: Path) -> 
     assert not list((mobius_home / "runs").glob("*/pid"))
 
 
-def test_run_foreground_sigterm_cancels_and_cleans_pid(tmp_path: Path) -> None:
+def test_run_foreground_sigterm_cancels_and_cleans_pid(tmp_path: Path, mobius_runner) -> None:
     mobius_home = tmp_path / "home"
     spec = tmp_path / "long.yaml"
     write_long_running_spec(spec)
@@ -163,12 +152,14 @@ def test_run_foreground_sigterm_cancels_and_cleans_pid(tmp_path: Path) -> None:
     assert stdout == ""
     assert "run.started" in stderr
     assert not pid_file.exists()
-    status = run_mobius("status", run_id, "--json", mobius_home=mobius_home)
+    status = mobius_runner("status", run_id, "--json", mobius_home=mobius_home)
     assert status.returncode == 0
     assert json.loads(status.stdout)["state"] == "cancelled"
 
 
-def test_run_foreground_sigint_exits_130_with_interrupted_and_cleans_pid(tmp_path: Path) -> None:
+def test_run_foreground_sigint_exits_130_with_interrupted_and_cleans_pid(
+    tmp_path: Path, mobius_runner
+) -> None:
     mobius_home = tmp_path / "home"
     spec = tmp_path / "long.yaml"
     write_long_running_spec(spec)
@@ -184,23 +175,23 @@ def test_run_foreground_sigint_exits_130_with_interrupted_and_cleans_pid(tmp_pat
     assert stdout == ""
     assert "interrupted" in stderr
     assert not pid_file.exists()
-    status = run_mobius("status", run_id, "--json", mobius_home=mobius_home)
+    status = mobius_runner("status", run_id, "--json", mobius_home=mobius_home)
     assert status.returncode == 0
     assert json.loads(status.stdout)["state"] == "interrupted"
 
 
-def test_run_rejects_invalid_spec_with_exit_3(tmp_path: Path) -> None:
+def test_run_rejects_invalid_spec_with_exit_3(tmp_path: Path, mobius_runner) -> None:
     spec = tmp_path / "invalid.yaml"
     spec.write_text("project_type: greenfield\ngoal:\nconstraints:\nsuccess_criteria:\n")
 
-    result = run_mobius("run", "--spec", str(spec), mobius_home=tmp_path / "home")
+    result = mobius_runner("run", "--spec", str(spec), mobius_home=tmp_path / "home")
 
     assert result.returncode == 3
     assert "seed spec validation failed" in result.stderr
     assert result.stdout == ""
 
 
-def test_concurrent_detached_runs_keep_event_store_integrity(tmp_path: Path) -> None:
+def test_concurrent_detached_runs_keep_event_store_integrity(tmp_path: Path, mobius_runner) -> None:
     mobius_home = tmp_path / "home"
     spec = tmp_path / "spec.yaml"
     write_valid_spec(spec)
@@ -243,11 +234,11 @@ def test_concurrent_detached_runs_keep_event_store_integrity(tmp_path: Path) -> 
     assert integrity[0] == "ok"
 
 
-def test_sigkill_worker_cleanup_on_subsequent_status(tmp_path: Path) -> None:
+def test_sigkill_worker_cleanup_on_subsequent_status(tmp_path: Path, mobius_runner) -> None:
     mobius_home = tmp_path / "home"
     spec = tmp_path / "spec.yaml"
     write_valid_spec(spec)
-    result = run_mobius("run", "--spec", str(spec), mobius_home=mobius_home)
+    result = mobius_runner("run", "--spec", str(spec), mobius_home=mobius_home)
     assert result.returncode == 0
     run_id = result.stdout.strip()
     pid_file = wait_for_pid_file(mobius_home, run_id)
@@ -258,7 +249,7 @@ def test_sigkill_worker_cleanup_on_subsequent_status(tmp_path: Path) -> None:
     while pid_is_live(pid) and time.monotonic() < deadline:
         time.sleep(0.05)
 
-    status = run_mobius("status", run_id, "--json", mobius_home=mobius_home)
+    status = mobius_runner("status", run_id, "--json", mobius_home=mobius_home)
 
     assert status.returncode == 0
     assert json.loads(status.stdout)["state"] == "crashed"

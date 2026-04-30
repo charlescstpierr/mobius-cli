@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib
 import json
 import sys
 from pathlib import Path
@@ -15,9 +14,8 @@ from mobius.cli.main import CliContext, ExitCode
 
 
 @pytest.fixture
-def interview_command() -> ModuleType:
-    sys.modules.pop("mobius.cli.commands.interview", None)
-    return importlib.import_module("mobius.cli.commands.interview")
+def interview_command(reloaded_command) -> ModuleType:
+    return reloaded_command("mobius.cli.commands.interview")
 
 
 def _ctx(tmp_path: Path, *, json_output: bool = False) -> CliContext:

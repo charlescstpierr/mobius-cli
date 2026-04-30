@@ -7,34 +7,12 @@ from mobius.v3a.scoring.mechanical import (
     VerificationResult,
     compute_mechanical_score,
 )
-from mobius.workflow.seed import SeedSpec
 
 
-def scoring_spec() -> SeedSpec:
-    return SeedSpec(
-        source_session_id=None,
-        project_type="greenfield",
-        goal="Ship a deterministic TODO CLI with local storage and clear output.",
-        constraints=["Keep state local", "Avoid network services"],
-        success_criteria=[
-            "Add a TODO item and show it in the list output.",
-            "Complete a TODO item and mark it done in the list output.",
-            "Empty input returns a helpful validation error.",
-        ],
-        context="",
-        verification_commands=[
-            {"command": "uv run pytest -q", "criterion_ref": "1", "timeout_s": 60},
-            {"command": "uv run pytest -q", "criterion_ref": "2", "timeout_s": 60},
-            {"command": "uv run pytest -q", "criterion_ref": "3", "timeout_s": 60},
-        ],
-        template="cli",
-    )
-
-
-def test_score_is_integer_with_7_mechanical_and_3_llm_binary_dimensions() -> None:
+def test_score_is_integer_with_7_mechanical_and_3_llm_binary_dimensions(scoring_spec) -> None:
     result = compute_score(
         ScoreInputs(
-            spec=scoring_spec(),
+            spec=scoring_spec,
             run_id="run-score",
             verification_results=(VerificationResult("PASS"),),
             ambiguity_score=0.1,
@@ -55,9 +33,9 @@ def test_score_is_integer_with_7_mechanical_and_3_llm_binary_dimensions() -> Non
     )
 
 
-def test_mechanical_dimensions_are_bit_identical_for_fixed_inputs() -> None:
+def test_mechanical_dimensions_are_bit_identical_for_fixed_inputs(scoring_spec) -> None:
     inputs = MechanicalInputs(
-        spec=scoring_spec(),
+        spec=scoring_spec,
         branch_coverage_percent=95.0,
         mypy_errors=0,
         verification_results=(
@@ -75,9 +53,9 @@ def test_mechanical_dimensions_are_bit_identical_for_fixed_inputs() -> None:
     assert first == second
 
 
-def test_mechanical_lost_points_cover_threshold_edges() -> None:
+def test_mechanical_lost_points_cover_threshold_edges(scoring_spec) -> None:
     inputs = MechanicalInputs(
-        spec=scoring_spec(),
+        spec=scoring_spec,
         branch_coverage_percent=94.9,
         mypy_errors=1,
         verification_results=(

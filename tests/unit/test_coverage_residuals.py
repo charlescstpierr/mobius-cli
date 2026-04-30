@@ -22,6 +22,7 @@ from unittest import mock
 import pytest
 
 from mobius import cli as cli_module
+from mobius.cli import session_inspector
 from mobius.cli.commands import seed as seed_command_module
 from mobius.cli.commands import setup as setup_command_module
 from mobius.cli.main import CliContext
@@ -134,8 +135,8 @@ def test_pid_is_live_returns_true_on_permission_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """When os.kill raises PermissionError, the process is still considered alive."""
-    monkeypatch.setattr(cli_module.os, "kill", mock.Mock(side_effect=PermissionError()))
-    assert cli_module._pid_is_live(123_456) is True
+    monkeypatch.setattr(session_inspector.os, "kill", mock.Mock(side_effect=PermissionError()))
+    assert session_inspector.pid_is_live(123_456) is True
 
 
 def test_mark_stale_creates_session_when_missing_and_appends_crashed(
@@ -154,7 +155,7 @@ def test_mark_stale_creates_session_when_missing_and_appends_crashed(
     pid_file.parent.mkdir(parents=True)
     pid_file.write_text("2999999\n", encoding="utf-8")
 
-    cli_module._mark_stale_session_if_needed(home, db_path, "evo_missing")
+    cli_module._fast_session_inspector(home, db_path).mark_stale_session_if_needed("evo_missing")
 
     with EventStore(db_path) as store:
         events = store.read_events("evo_missing")
@@ -180,7 +181,7 @@ def test_mark_stale_skips_when_pid_alive(tmp_path: Path) -> None:
     pid_file.parent.mkdir(parents=True)
     pid_file.write_text(f"{os.getpid()}\n", encoding="utf-8")
 
-    cli_module._mark_stale_session_if_needed(home, db_path, "run_alive")
+    cli_module._fast_session_inspector(home, db_path).mark_stale_session_if_needed("run_alive")
     with EventStore(db_path) as store:
         row = store.connection.execute(
             "SELECT status FROM sessions WHERE session_id = ?",
@@ -201,7 +202,7 @@ def test_mark_stale_terminal_session_just_cleans_pid_file(tmp_path: Path) -> Non
     pid_file.parent.mkdir(parents=True)
     pid_file.write_text("99999999\n", encoding="utf-8")
 
-    cli_module._mark_stale_session_if_needed(home, db_path, "run_done")
+    cli_module._fast_session_inspector(home, db_path).mark_stale_session_if_needed("run_done")
     assert not pid_file.exists()
 
 

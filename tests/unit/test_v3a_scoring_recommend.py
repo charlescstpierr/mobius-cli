@@ -7,28 +7,6 @@ from mobius.v3a.scoring.recommend import (
     build_score_recommendations,
     recommendation_for,
 )
-from mobius.workflow.seed import SeedSpec
-
-
-def scoring_spec() -> SeedSpec:
-    return SeedSpec(
-        source_session_id=None,
-        project_type="greenfield",
-        goal="Ship a deterministic TODO CLI with local storage and clear output.",
-        constraints=["Keep state local", "Avoid network services"],
-        success_criteria=[
-            "Add a TODO item and show it in the list output.",
-            "Complete a TODO item and mark it done in the list output.",
-            "Empty input returns a helpful validation error.",
-        ],
-        context="",
-        verification_commands=[
-            {"command": "uv run pytest -q", "criterion_ref": "1", "timeout_s": 60},
-            {"command": "uv run pytest -q", "criterion_ref": "2", "timeout_s": 60},
-            {"command": "uv run pytest -q", "criterion_ref": "3", "timeout_s": 60},
-        ],
-        template="cli",
-    )
 
 
 def test_each_zero_point_dimension_produces_actionable_recommendation() -> None:
@@ -46,10 +24,10 @@ def test_each_zero_point_dimension_produces_actionable_recommendation() -> None:
         )
 
 
-def test_score_recommendations_empty_when_score_is_ten() -> None:
+def test_score_recommendations_empty_when_score_is_ten(scoring_spec) -> None:
     result = compute_score(
         ScoreInputs(
-            spec=scoring_spec(),
+            spec=scoring_spec,
             run_id="perfect-score",
             verification_results=(VerificationResult("PASS"),),
             ambiguity_score=0.1,

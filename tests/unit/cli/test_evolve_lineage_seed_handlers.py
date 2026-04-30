@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import importlib
 import json
-import sys
 from pathlib import Path
 from types import ModuleType
 from unittest import mock
@@ -15,24 +13,19 @@ import typer
 from mobius.cli.main import CliContext, ExitCode
 
 
-def _resolve(name: str) -> ModuleType:
-    sys.modules.pop(name, None)
-    return importlib.import_module(name)
+@pytest.fixture
+def evolve_command(reloaded_command) -> ModuleType:
+    return reloaded_command("mobius.cli.commands.evolve")
 
 
 @pytest.fixture
-def evolve_command() -> ModuleType:
-    return _resolve("mobius.cli.commands.evolve")
+def lineage_command(reloaded_command) -> ModuleType:
+    return reloaded_command("mobius.cli.commands.lineage")
 
 
 @pytest.fixture
-def lineage_command() -> ModuleType:
-    return _resolve("mobius.cli.commands.lineage")
-
-
-@pytest.fixture
-def seed_command() -> ModuleType:
-    return _resolve("mobius.cli.commands.seed")
+def seed_command(reloaded_command) -> ModuleType:
+    return reloaded_command("mobius.cli.commands.seed")
 
 
 def _ctx(tmp_path: Path, *, json_output: bool = False) -> CliContext:

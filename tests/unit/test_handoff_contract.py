@@ -6,19 +6,7 @@ from mobius.agents import KNOWN_AGENTS, TEMPLATE_VERSION
 from mobius.workflow.handoff import render_handoff
 from mobius.workflow.seed import load_seed_spec
 
-
-def _write_spec(path: Path, *, instructions: bool = True) -> None:
-    instructions_block = (
-        """
-agent_instructions:
-  claude: Keep the summary concise.
-  codex: Prefer exact commands.
-"""
-        if instructions
-        else ""
-    )
-    path.write_text(
-        f"""
+HANDOFF_CONTRACT_SPEC = """
 project_type: greenfield
 goal: Ship a handoff prompt.
 constraints:
@@ -37,15 +25,14 @@ risks:
 owner: qa-team
 non_goals:
   - Do not install Jinja2.
-{instructions_block}
-""".strip(),
-        encoding="utf-8",
-    )
+agent_instructions:
+  claude: Keep the summary concise.
+  codex: Prefer exact commands.
+""".strip()
 
 
-def test_all_known_agents_have_markers(tmp_path: Path) -> None:
-    spec_path = tmp_path / "spec.yaml"
-    _write_spec(spec_path)
+def test_all_known_agents_have_markers(tmp_path: Path, spec_factory) -> None:
+    spec_path = spec_factory(tmp_path / "spec.yaml", body=HANDOFF_CONTRACT_SPEC)
     spec = load_seed_spec(spec_path)
 
     for agent in KNOWN_AGENTS:

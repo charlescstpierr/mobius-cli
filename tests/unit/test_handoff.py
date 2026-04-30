@@ -9,10 +9,7 @@ from mobius.workflow import handoff
 from mobius.workflow.handoff import generate_handoff, render_handoff
 from mobius.workflow.seed import SeedSpec, SeedSpecValidationError, load_seed_spec
 
-
-def _write_spec(path: Path) -> None:
-    path.write_text(
-        """
+HANDOFF_SPEC = """
 project_type: greenfield
 goal: Produce a contract-compliant handoff.
 constraints:
@@ -29,14 +26,11 @@ owner: qa-team
 non_goals:
   - Do not add dependencies.
 agent_instructions: Follow repository validators before handoff.
-""".strip(),
-        encoding="utf-8",
-    )
+""".strip()
 
 
-def test_handoff_includes_all_sections(tmp_path: Path) -> None:
-    spec_path = tmp_path / "spec.yaml"
-    _write_spec(spec_path)
+def test_handoff_includes_all_sections(tmp_path: Path, spec_factory) -> None:
+    spec_path = spec_factory(tmp_path / "spec.yaml", body=HANDOFF_SPEC)
 
     rendered = render_handoff(load_seed_spec(spec_path), agent="claude")
 
@@ -51,9 +45,8 @@ def test_handoff_includes_all_sections(tmp_path: Path) -> None:
     assert "Follow repository validators" in rendered.prompt
 
 
-def test_generate_handoff_emits_versioned_event(tmp_path: Path) -> None:
-    spec_path = tmp_path / "spec.yaml"
-    _write_spec(spec_path)
+def test_generate_handoff_emits_versioned_event(tmp_path: Path, spec_factory) -> None:
+    spec_path = spec_factory(tmp_path / "spec.yaml", body=HANDOFF_SPEC)
     store_path = tmp_path / "home" / "events.db"
 
     rendered = generate_handoff(

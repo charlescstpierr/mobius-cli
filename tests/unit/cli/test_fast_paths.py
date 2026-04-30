@@ -13,6 +13,7 @@ from unittest import mock
 import pytest
 
 from mobius import cli as cli_module
+from mobius.cli import session_inspector
 from mobius.persistence.event_store import EventStore
 
 # Capture the fast-path main() at import time before any mobius.cli.main
@@ -482,28 +483,28 @@ def test_main_falls_back_to_typer(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_pid_helpers_round_trip(tmp_path: Path) -> None:
     pid_file = tmp_path / "pid"
     pid_file.write_text("99999999\n", encoding="utf-8")
-    pid = cli_module._read_pid(pid_file)
+    pid = session_inspector.read_pid(pid_file)
     assert pid == 99999999
-    cli_module._cleanup_pid_file(pid_file)
+    session_inspector.cleanup_pid_file(pid_file)
     assert not pid_file.exists()
     # cleanup is idempotent
-    cli_module._cleanup_pid_file(pid_file)
+    session_inspector.cleanup_pid_file(pid_file)
 
 
 def test_read_pid_returns_none_for_garbage(tmp_path: Path) -> None:
     pid_file = tmp_path / "pid"
     pid_file.write_text("not-a-number\n", encoding="utf-8")
-    assert cli_module._read_pid(pid_file) is None
+    assert session_inspector.read_pid(pid_file) is None
 
 
 def test_read_pid_returns_none_when_missing(tmp_path: Path) -> None:
-    assert cli_module._read_pid(tmp_path / "missing") is None
+    assert session_inspector.read_pid(tmp_path / "missing") is None
 
 
 def test_pid_is_live_handles_dead_process() -> None:
     # PID 1 should be alive on every POSIX system; an unlikely pid likely is dead.
-    assert cli_module._pid_is_live(os.getpid()) is True
-    assert cli_module._pid_is_live(2_999_999) is False
+    assert session_inspector.pid_is_live(os.getpid()) is True
+    assert session_inspector.pid_is_live(2_999_999) is False
 
 
 def test_mark_stale_no_pid_file_is_noop(tmp_path: Path) -> None:
@@ -511,5 +512,7 @@ def test_mark_stale_no_pid_file_is_noop(tmp_path: Path) -> None:
     home.mkdir()
     with EventStore(home / "events.db") as store:
         store.create_session("run_z", runtime="run", metadata={}, status="running")
-    cli_module._mark_stale_session_if_needed(home, home / "events.db", "run_z")
+    cli_module._fast_session_inspector(home, home / "events.db").mark_stale_session_if_needed(
+        "run_z"
+    )
     # No exception means success
