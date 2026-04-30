@@ -45,6 +45,8 @@ If a manifest exists, read it to learn the project name, scripts, and existing
 dependencies. Reference them in your follow-up questions instead of asking the
 user from scratch.
 
+Si le template détecté ne correspond pas au projet que l'utilisateur décrit (ex: workspace Python mais projet Rust), utiliser le template correspondant à l'intent de l'utilisateur, pas au workspace.
+
 ## Mode routing
 
 | Invocation | Mode |
@@ -100,6 +102,8 @@ Bash('mobius interview --non-interactive \
 Pass each constraint and each success criterion as its **own**
 `--constraint` / `--success-criterion` flag. Quote values that contain
 spaces. Mobius writes `spec.yaml` and a session id to stdout.
+
+**Note :** le CLI applique un gate d'ambiguïté (seuil 0.2). Si le goal ou les critères sont trop vagues (ex: 'TBD', vides), le CLI rejettera la spec. Reformuler les champs problématiques et réessayer.
 
 ### 4. Hand back, then drive `mobius seed` / `run`
 
@@ -187,6 +191,8 @@ Reformuler le projet en une phrase courte et vérifier l'alignement :
 - Si l'utilisateur dit non → reformuler à nouveau (max 2 tentatives).
 - Après 2 échecs → proposer deux options A/B : "Est-ce plutôt A [option A]
   ou B [option B] ?"
+
+Si le projet est brownfield (système existant) — poser explicitement : « Quel système existant doit être préservé ? Qu'est-ce qui ne doit surtout pas casser ? »
 
 ### 1.5 Avertissement domaine sensible
 
@@ -543,6 +549,8 @@ Score total >= 12/15 ET chaque axe >= 4/5 requis pour passer en Phase 5.
 Si le gate n'est pas atteint → identifier les axes bloquants et retourner en
 Phase 3 sur les branches correspondantes.
 
+**Note :** ce gate est vérifié par l'agent, pas par le CLI. Le CLI ne vérifie que le gate d'ambiguïté (0.2). La rigueur du mode deep repose sur la discipline de l'agent à respecter ces phases.
+
 ---
 
 ## Phase 5 — Extraction → spec.yaml
@@ -616,9 +624,11 @@ Bash('mobius interview --non-interactive \
   --success-criterion "<critère mesurable 1>" \
   --success-criterion "<critère mesurable 2>" \
   [--context "<contexte brownfield>"] \
-  --deep-metadata deep-meta.json \
+  --deep-metadata /absolute/path/to/deep-meta.json \
   --output spec.yaml')
 ```
+
+Utiliser le chemin absolu retourné par le Write tool pour `deep-meta.json`.
 
 Passer chaque contrainte et chaque critère comme son propre flag.
 Citer toutes les valeurs qui contiennent des espaces.
