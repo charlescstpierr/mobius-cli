@@ -6,17 +6,17 @@ import importlib
 import os
 import signal
 import sys
-from collections.abc import Callable
 from dataclasses import dataclass
 from enum import IntEnum
 from pathlib import Path
-from typing import Annotated, Any, Protocol, cast
+from typing import Annotated, Any, cast
 
 import typer
 
 from mobius import __version__
 from mobius.cli import output
 from mobius.logging import configure_logging
+from mobius.v3a.cli.main import register_top_level_commands, v3a_app
 
 sys.modules.pop("subprocess", None)
 
@@ -38,16 +38,6 @@ class CliContext:
 
     json_output: bool
     mobius_home: Path
-
-
-class CommandModule(Protocol):
-    """Protocol implemented by lazily imported command modules."""
-
-    def run(self, context: CliContext) -> None:
-        """Run the command with the shared CLI context."""
-
-
-COMMAND_MODULES: dict[str, str] = {}
 
 
 app = typer.Typer(
@@ -102,96 +92,6 @@ def cli(
     signal.signal(signal.SIGINT, _handle_sigint)
     configure_logging(json_output=json_output)
     ctx.obj = build_context(json_output=json_output)
-
-
-def _make_lazy_command(module_name: str) -> Callable[[typer.Context], None]:
-    def command(ctx: typer.Context) -> None:
-        module = importlib.import_module(module_name)
-        cast(CommandModule, module).run(ctx.obj)
-
-    return command
-
-
-for command_name, module_name in COMMAND_MODULES.items():
-    app.command(name=command_name, help="Stub command; implementation pending.")(
-        _make_lazy_command(module_name)
-    )
-
-
-@app.command(name="build", help="Run the v3a Interview Infinie build composer.")
-def build_command(
-    ctx: typer.Context,
-    intent: Annotated[
-        str | None,
-        typer.Argument(help="Product intent to clarify. Omit for interactive composer."),
-    ] = None,
-    interactive: Annotated[
-        bool,
-        typer.Option("--interactive", help="Run with interactive prompts (default mode)."),
-    ] = True,
-    wizard: Annotated[
-        bool,
-        typer.Option(
-            "--wizard",
-            help="Auto-proceed through Phase 1 using deterministic answers.",
-        ),
-    ] = False,
-    agent: Annotated[
-        bool,
-        typer.Option("--agent", help="Emit JSON suitable for coding-agent orchestration."),
-    ] = False,
-    resume: Annotated[
-        bool,
-        typer.Option("--resume", help="Resume from the next incomplete build phase."),
-    ] = False,
-    force_immature: Annotated[
-        bool,
-        typer.Option("--force-immature", help="Override the Phase 3 maturity gate."),
-    ] = False,
-    auto_top_up: Annotated[
-        bool,
-        typer.Option("--auto-top-up", help="Deterministically top up spec maturity."),
-    ] = False,
-    skip_tour: Annotated[
-        bool,
-        typer.Option("--skip-tour", help="Bypass the first-run guided tour."),
-    ] = False,
-    override_reason: Annotated[
-        str | None,
-        typer.Option("--override-reason", help="Reason recorded with --force-immature."),
-    ] = None,
-) -> None:
-    """Run the v3a build command while keeping implementation under mobius.v3a."""
-    module = importlib.import_module("mobius.v3a.cli.commands")
-    cast(Any, module).run_build(
-        ctx.obj,
-        intent=intent,
-        interactive=interactive,
-        wizard=wizard,
-        agent=agent,
-        resume=resume,
-        force_immature=force_immature,
-        auto_top_up=auto_top_up,
-        skip_tour=skip_tour,
-        override_reason=override_reason,
-    )
-
-
-@app.command(name="maturity", help="Inspect the v3a deterministic maturity score.")
-def maturity_command(
-    ctx: typer.Context,
-    spec: Annotated[
-        Path,
-        typer.Argument(help="Spec file to inspect."),
-    ] = Path("spec.yaml"),
-    json_output: Annotated[
-        bool,
-        typer.Option("--json", help="Emit machine-readable JSON."),
-    ] = False,
-) -> None:
-    """Run the read-only v3a maturity inspection command."""
-    module = importlib.import_module("mobius.v3a.cli.commands")
-    cast(Any, module).run_maturity(ctx.obj, spec=spec, json_output=json_output)
 
 
 @app.command(name="cold-start", help="Measure `mobius --help` cold-start median over 5 runs.")
@@ -963,6 +863,33 @@ def runs_ls_command(
 app.add_typer(runs_app, name="runs")
 
 
+@app.command(name="smoke", help="Run complete local workflow checks.")
+def smoke_command(
+    ctx: typer.Context,
+    json_output: Annotated[
+        bool,
+        typer.Option(
+            "--json",
+            help="Emit machine-readable JSON with per-step results.",
+        ),
+    ] = False,
+    keep_workspace: Annotated[
+        bool,
+        typer.Option(
+            "--keep-workspace",
+            help="Do not remove the temporary smoke workspace after the run.",
+        ),
+    ] = False,
+) -> None:
+    """Run init, interview, seed, run, status, and QA in a temp workspace."""
+    module = importlib.import_module("mobius.cli.commands.smoke")
+    cast(Any, module).run(
+        ctx.obj,
+        json_output=json_output,
+        keep_workspace=keep_workspace,
+    )
+
+
 workflow_app = typer.Typer(
     add_completion=False,
     context_settings={"help_option_names": ["-h", "--help"]},
@@ -1037,57 +964,7 @@ def projection_rebuild_command(
 app.add_typer(projection_app, name="projection")
 
 
-v3a_app = typer.Typer(
-    add_completion=False,
-    context_settings={"help_option_names": ["-h", "--help"]},
-    help="v3a-specific subcommands (matrix scoring, anti-regression diff).",
-)
-
-
-matrix_app = typer.Typer(
-    add_completion=False,
-    context_settings={"help_option_names": ["-h", "--help"]},
-    help="Per-cell scoring and diff for the F10 anti-regression product matrix.",
-)
-
-
-@matrix_app.command(name="diff", help="Compare two MatrixScores JSON files.")
-def matrix_diff_command(
-    ctx: typer.Context,
-    baseline: Annotated[
-        Path,
-        typer.Option(
-            "--baseline",
-            help="Path to the baseline MatrixScores JSON file (schema_version=1).",
-        ),
-    ],
-    candidate: Annotated[
-        Path,
-        typer.Option(
-            "--candidate",
-            help="Path to the candidate MatrixScores JSON file (schema_version=1).",
-        ),
-    ],
-    tolerance: Annotated[
-        int,
-        typer.Option(
-            "--tolerance",
-            min=0,
-            help="Maximum allowed per-cell drop before declaring a regression.",
-        ),
-    ] = 0,
-) -> None:
-    """Compare two MatrixScores JSON files and emit a verdict + exit code."""
-    module = importlib.import_module("mobius.v3a.cli.commands")
-    cast(Any, module).run_matrix_diff(
-        ctx.obj,
-        baseline=baseline,
-        candidate=candidate,
-        tolerance=tolerance,
-    )
-
-
-v3a_app.add_typer(matrix_app, name="matrix")
+register_top_level_commands(app)
 app.add_typer(v3a_app, name="v3a")
 
 
